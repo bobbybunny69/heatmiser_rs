@@ -1,0 +1,12 @@
+{
+  "domain": "heatmiser_rs",
+  "name": "Heatmiser RS",
+  "config_flow": true,
+  "version": "2.0.0",
+  "documentation": "https://www.home-assistant.io/integrations/heatmiser",
+  "requirements": [],
+  "dependencies": [],
+  "codeowners": [],
+  "iot_class": "local_polling"
+}
+
