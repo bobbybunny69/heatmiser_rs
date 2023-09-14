@@ -1,5 +1,7 @@
 # Homeassistant Heatmiser custom component (experimental)
 This is my personal custom componet modified from the standard Heatmiser componet by Andy Lockran that fixes a few issues I found and also added a few twaeakes (hacks) to enable adjustemnt of the heating schedule and also control Domestic HW - no problems to use or borrow but do not expect too much
+
+__Note:__   `sensors.py` not used but just in case I want to add later
  
 
 ![Image](https://github.com/home-assistant/brands/blob/master/core_integrations/heatmiser/logo.png)
