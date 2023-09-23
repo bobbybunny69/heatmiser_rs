@@ -1,6 +1,8 @@
 """
 Adds Support for Senors with Heatmiser Thermostat
 
+Placeholder
+
 Author: me
 
 """
