@@ -15,11 +15,11 @@ __Note:__   `sensors.py` not used but just in case I want to add later
 * Assumes Thermos are in the first 'n' channels
 
 # Controlling the Thermostats
-* Supports Home and Away modes (falls back to fallback teno when away)
+* Supports Home and Away modes (falls back to fallback temp when away)
 * Use the fan mode as an overided way of controling Domestic HW (if thermostat supports it)
 * creates services for setting the DHW (if supportted) and heating schedules on each thermostats
 
 # ToDO
-- [ ] Get rid of the bocking call compaints in Home Assistant
-- [ ] Make the DHW thermostat detection automated
+- [ ] Get rid of the bocking call complaints in Home Assistant
+- [ ] Make the DHW thermostat detection automated (and possibly a sensor)
 
