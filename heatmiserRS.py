@@ -1,19 +1,30 @@
 #
 # Rob Saunders 2020
-# Assume Python 3.7.x +
+# Assume Python 3.10.x +
 # My version to do a more atomic reading of the stats
 
-import sys
-import serial
+
+import asyncio
+import serial_asyncio
 import logging
-import requests
+
+_LOGGER = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
+
+print(_LOGGER)
 
 BYTEMASK = 0xff
 # Master address used (must be 129-160)
 MASTER_ADDR = 0x81
+MAX_CHANS = 8
 
 READ=0
 WRITE=1
+WEEKEND = True
+WEEKDAY = False
+
+DUMMY_TEMP = 17.0
+OFF = 0
 
 HW_TIMER = 0
 HW_F_ON = 1
@@ -21,14 +32,257 @@ HW_F_OFF = 2
 HEAT_MODE = 0
 AWAY = 1
 
-WEEKDAY_ADDR=47
-WEEKEND_ADDR=59
+#Thermo models
+PRT = 2
+PRTHW = 4
 
-WEEKDAY_DHW_ADDR=71
-WEEKEND_DHW_ADDR=87
+#DCB lengths
+PRT_DCB_LEN = 75
+PRTHW_DCB_LEN = 108
 
-_LOGGER = logging.getLogger(__name__)
+#DCB address indexes
+WEEKDAY_ADDR=40   ### Add 1 for HW thermo for both
+WEEKEND_ADDR=52
 
+WEEKDAY_DHW_ADDR=65
+WEEKEND_DHW_ADDR=81
+
+MODEL_ADDR = 4
+TARGET_ADDR = 18
+HEAT_ADDR = 35
+RUNMODE_ADDR = 23
+AWAYTEMP_ADDR = 17
+ROOMTEMP_ADDR = 32
+DHW_ADDR = 36
+DAY_ADDR = 36 ### Add 1 for HW thermo
+TIME_ADDR = 37  ### Ditto
+HOLIDAYLEN_ADDR = 24
+
+#Unique write addresses (where different)
+DAYTIME_ADDRW = 43
+DHW_ADDRW = 42
+WEEKDAY_ADDRW = 47
+WEEKEND_ADDRW = 59
+WEEKDAY_DHW_ADDRW = 71
+WEEKEND_DHW_ADDRW = 87
+
+
+class HeatmiserThermostat(object):
+    """Initialises a heatmiser thermostat, by taking an address and model."""
+    def __init__(self, id_num, room, uh1):
+        _LOGGER.debug("[RS] HeatmiserThermostat __init__ called with id, name {},{}".format(id_num, room))
+        self.tstat_id = id_num
+        self.dcb = None   # Dummy array of correct type
+        self.room = room
+        self.uh1_com = uh1
+        
+    def refresh_dcb(self):
+        _LOGGER.debug("[RS] HeatmiserThermostat refresh_data called")
+        self.dcb = self.uh1_com.dcb_dict[self.tstat_id]
+        _LOGGER.debug("[RS] DCB contents (length): {}   ({})".format(self.dcb,len(self.dcb)))
+        self.model = self.dcb[MODEL_ADDR] 
+
+    def get_tstat_id(self):
+        return self.tstat_id
+    
+    def get_room(self):
+        return self.room
+
+    def get_model(self):
+        if self.dcb == None:
+            return PRT
+        return self.dcb[MODEL_ADDR]
+
+    def get_target_temp(self):
+        if self.dcb == None:
+            return DUMMY_TEMP
+        return self.dcb[TARGET_ADDR]
+
+    async def async_set_target_temp(self, temperature):
+        """
+        Updates the set taregt temperature and then 
+        """
+        _LOGGER.info("[RS] HeatmiserThermostat set_target_temp called")
+
+        if 35 < temperature < 5:
+            _LOGGER.error("[RS] Refusing to set temp outside of allowed range (5-35)")
+        else:
+            datal = [temperature]
+            await self.uh1_com.async_write_bytes(self.tstat_id, TARGET_ADDR, datal)
+ 
+    def get_away_temp(self):
+        if self.dcb == None:
+            return DUMMY_TEMP
+        return self.dcb[AWAYTEMP_ADDR]
+
+    ### TODO Fix make async but dont think I use this in HA  
+    async def async_set_away_temp(self, temperature):
+        """
+        Updates the Away temperature 
+        """
+        _LOGGER.info("[RS] HeatmiserThermostat set_away_temp called")
+
+        if 17 < temperature < 7:
+            _LOGGER.error("[RS] Refusing to set temp outside of allowed range (7-17)")
+        else:
+            datal = [temperature]
+            await self.uh1_com.async_write_bytes(self.tstat_id, AWAYTEMP_ADDR, datal)
+ 
+    def get_heat_status(self):
+        if self.dcb == None:
+            return OFF
+        return self.dcb[HEAT_ADDR]
+
+    def get_run_mode(self):
+        if self.dcb == None:
+            return HEAT_MODE
+        return self.dcb[RUNMODE_ADDR]
+
+    async def async_set_run_mode(self, heat_away):
+        """
+        Updates the set run_mode HEAT_MODE=0 (deafult) AWAY=1 (aka frost protect)
+        """
+        _LOGGER.info("[RS] HeatmiserThermostat set_run_mode called with {}".format(heat_away))
+
+        datal = [heat_away]
+        await self.uh1_com.async_write_bytes(self.tstat_id, RUNMODE_ADDR, datal)
+        
+    #def get_heat_state(self):
+        #return int.from_bytes(self.dcb[RUNMODE_ADDR+9],'little')
+
+    def get_room_temp(self):
+        if self.dcb == None:
+            return DUMMY_TEMP
+        msb = self.dcb[ROOMTEMP_ADDR]>>8
+        lsb = self.dcb[ROOMTEMP_ADDR+1]
+        return ((msb+lsb)/10)
+
+    def get_hotwater_status(self):
+        if self.dcb == None:
+            return OFF
+        if self.get_model() == PRTHW:
+            _LOGGER.debug("[RS] HeatmiserThermostat support HW - read status")
+            return self.dcb[DHW_ADDR]
+        else:
+            return (0)
+
+    async def async_set_hotwater_state(self, onoff):
+        """
+        Sets the HW state - NOTE:  0=TIMER,  ON=1,  FORCE OFF=2
+        """
+        _LOGGER.info("[RS] HeatmiserThermostat set_hotwater_state called with {}".format(onoff))
+
+        if self.get_model() != PRTHW:
+            _LOGGER.error("[RS] Refusing to set hot-water as incorrect thermo model")
+        else:
+            datal = [onoff]
+            await self.uh1_com.async_write_bytes(self.tstat_id, DHW_ADDRW, datal)
+
+    def get_day(self):
+        if self.dcb == None:
+            return None
+        if self.get_model() == PRTHW:
+            return self.dcb[DAY_ADDR+1]
+        else:
+            return self.dcb[DAY_ADDR]
+
+    def get_time(self):
+        if self.dcb == None:
+            return None
+        if self.get_model() == PRTHW:
+            i=TIME_ADDR+1
+        else:
+            i=TIME_ADDR
+        time = self.dcb[i]*3600 
+        time+= self.dcb[i+1]*60
+        time+= self.dcb[i+2]
+        return time
+
+    async def async_set_daytime(self, day, hour, mins, secs):
+        """
+        Update the day and time NOTE: have to do together as in the same funtion group (see Hetamiser v3 protocol doc)  
+        """
+        _LOGGER.info("[RS] HeatmiserThermostat set_daytime called with tsatid={}, DD,HH,MM,SS={},{},{},{}".format(self.tstat_id, day,hour,mins,secs))
+
+        datal = [day, hour, mins, secs]
+        await self.uh1_com.async_write_bytes(self.tstat_id, DAYTIME_ADDRW, datal)
+
+    def get_heat_schedule(self, weekend):
+        """
+        NOTE:  not using the self data array but reading direct from thermo
+        """
+        if self.dcb == None:
+            return None
+        if (weekend == WEEKEND):
+            dcb_addr = WEEKEND_ADDR
+        else:
+            dcb_addr = WEEKDAY_ADDR
+        if self.get_model() == PRTHW:
+            dcb_addr += 1
+
+        data_array = self.dcb[dcb_addr : dcb_addr+12] #read 12 bytes
+        return data_array
+
+    def get_dhw_schedule(self, weekend):
+        """
+        NOTE:  not using the self data array but reading direct from thermo
+        """
+        if self.dcb == None:
+            return None
+        if self.get_model() != PRTHW:
+            return None
+        if (weekend == WEEKEND):
+            dcb_addr = WEEKEND_DHW_ADDR
+        else:
+            dcb_addr = WEEKDAY_DHW_ADDR
+
+        data_array = self.dcb[dcb_addr : dcb_addr+16]   #read 16 bytes for 4 on/offs
+        return data_array
+
+    async def async_set_heat_schedule(self, weekend, sched_array):
+        """
+        not using the self data array but setting direct to thermo
+        NOTE: CAN ONLY USE 30 Minute intervals to program 
+        """
+        _LOGGER.info("[RS] HeatmiserThermostat set_schedule called (Heating)")
+        if (weekend == WEEKEND):
+            dcb_addr = WEEKEND_ADDRW
+        else:
+            dcb_addr = WEEKDAY_ADDRW
+
+        _LOGGER.info("[RS] set_heat_schedule called with tsatid={}, DCB={}, {}".format(self.tstat_id, dcb_addr, sched_array))
+        await self.uh1_com.async_write_bytes(self.tstat_id, dcb_addr, sched_array)
+
+    async def async_set_dhw_schedule(self, weekend, sched_array):
+        """
+        NOTE:  not using the self data array but setting direct to thermo
+        """
+        _LOGGER.info("[RS] HeatmiserThermostat set_dhw_schedule called (Hot water)")
+        if (weekend == WEEKEND):
+            dcb_addr = WEEKEND_DHW_ADDRW
+        else:
+            dcb_addr = WEEKDAY_DHW_ADDRW
+
+        await self.uh1_com.async_write_bytes(self.tstat_id, dcb_addr, sched_array)
+
+    def get_holiday(self):
+        if self.dcb == None:
+            return None
+        msb = self.dcb[HOLIDAYLEN_ADDR]>>8
+        lsb = self.dcb[HOLIDAYLEN_ADDR+1]
+        return (msb+lsb)
+
+    async def async_set_holiday(self, hours):
+        """
+        Jam holiday to max 1008 hrs (42 days) (note it swaps to read)  
+        """
+        _LOGGER.info("[RS] HeatmiserThermostat set_holiday called")
+
+        lo = hours & 255
+        hi = int (hours/256)
+        datal = [lo, hi]
+        _LOGGER.info("[RS] Wirting following data bytes {}".format(datal))
+        await self.uh1_com.async_write_bytes(self.tstat_id, HOLIDAYLEN_ADDR, datal)
 
 #
 # Believe this is known as CCITT (0xFFFF)
@@ -77,59 +331,116 @@ class CRC16:
             self.update(value)
         return [self.low, self.high]
 
+"""
+UH1 connection to the Heatmiser system
+"""
+class UH1_com:
+    def __init__(self, ipaddress, port):
+        _LOGGER.debug("[RS] UH1 __init__ called")
+        self.port = "socket://" + ipaddress + ":" + port
+        self.port_open = False
+        self.dcb_dict = {}
 
-class HeatmiserThermostat(object):
-    """Initialises a heatmiser thermostat, by taking an address and model."""
-    def __init__(self, id_num, uh1=None):
-        _LOGGER.debug("[RS] HeatmiserThermostat __init__ called")
-        self.address = id_num
-        if(uh1 != None):
-            self.uh1_conn = uh1
-        self.room = None
-        self.model = BYTEMASK    # 2,3 =PRT, 4 =PRT-HW
-        self.target_temp = None
-        self.heat_status = None
-        self.run_mode = None
-        self.away_temp = None
-        self.hw_status = None
-        self.room_temp = None
-        self.day = None
-        self.time = None
-        
-        self.refresh_data()
-        
-    def read_bytes(self, dcb_addr, num_bytes):
-        tstat_id = self.address
-        payload = 0  # Since reading - payload is length of bytes to write
-        dcb_addr_lo = dcb_addr & BYTEMASK
-        dcb_addr_hi = (dcb_addr>>8) & BYTEMASK
-        length_lo = num_bytes  # Since reading less than 256 bytes
-        length_hi = 0
-        msg = [tstat_id, 10+payload, MASTER_ADDR, READ, dcb_addr_lo, dcb_addr_hi, length_lo, length_hi]
-#        print ("Sent", msg)
+    async def async_read_dcbs(self, tstats):
+        tstat_ids = [ t["id"] for t in tstats ]
+        _LOGGER.info("[RS] UH1 async_read_dcbs called - for TSTATs {}".format(tstat_ids))
 
-        crc = CRC16()
-        msg = msg + crc.run(msg)
-#        print ("Sent+CRC", msg)
-        
-        string = bytes(msg)
-        try:
-            self.uh1_conn.serport.write(string)   # Write a string to trigger tsat to send back a DCB
-        except serial.SerialTimeoutException:
-            _LOGGER.error("[RS] Write timeout error: {}".format(serror))
-            return False
-        
-        byteread = self.uh1_conn.serport.read(11+num_bytes) 
-        datal = list(byteread)
+        read_bytes = []
+        class InputChunk(asyncio.Protocol):
+            def connection_made(self, transport):
+                self.transport = transport
+                _LOGGER.info("[RS] Port opened")
 
-        ##  TODO:  Proper un-packing and CRC check
-        del datal[0:9]    # Remove the header bytes
-        del datal[num_bytes:(num_bytes+2)]   # And the 16 bit CRC
+            def data_received(self, data):
+                #_LOGGER.debug("[RS] Data received: (length): {}   ({})".format(data,len(data)))
+                for b in data:
+                    read_bytes.append(b)
+                
+                # stop callbacks immeditely ?
+                #self.pause_reading()
 
-        return datal   # and return the remainder bytes as a list
+            def connection_lost(self, exc):
+                _LOGGER.info("[RS] Connection lost")
+                self.port_open = False
+                #self.transport.loop.stop()
+
+            def pause_reading(self):
+                _LOGGER.debug("[RS] Paused reading tansport: Halting callbacks")
+                self.transport.pause_reading()
+
+            def resume_reading(self):
+                _LOGGER.debug("[RS] Resumed reading tansport: Re-starting callbacks")
+                self.transport.resume_reading()
+
+        # Opens a non RFC2217 TCP/IP socket for serial
+        self.port_open = True
+        _LOGGER.debug("[RS] Opening serial port")        
+        loop = asyncio.get_running_loop()
+        transport, protocol = await serial_asyncio.create_serial_connection(loop, InputChunk, self.port)
+
+        for t in tstat_ids:
+            read_bytes = []
+            _LOGGER.debug("[RS] t=: {}".format(t))
+            payload = 0  # Since reading - payload is length of bytes to write
+            dcb_addr_lo = 0
+            dcb_addr_hi = 0
+            length_lo = 0xff  # Since reading full DCB
+            length_hi = 0xff
+            msg = [t, 10+payload, MASTER_ADDR, READ, dcb_addr_lo, dcb_addr_hi, length_lo, length_hi]
+            _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
+           
+            crc_w = CRC16()
+            msg = msg + crc_w.run(msg)
+            string = bytes(msg)
+
+            _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
+            transport.write(string)   # Write a string to trigger tsat to send back a DCB (64bytes since in 5/2 mode)
+            await asyncio.sleep(0.4)           # Sleep to have chance to read with callback
+
+            _LOGGER.debug("[RS] read_bytes contents (length): {}   ({})".format(read_bytes,len(read_bytes)))
+            del read_bytes[0:9]   #  Remove the first 9 elements - removes readback of write daya I think
+            dcb=read_bytes[:len(read_bytes)-2]
+            crc_r = CRC16()
+            _LOGGER.debug("[RS] DCB CRC = {}".format(crc_r.run(dcb[2:])))  ### NOTE THIS IS WRONG DONT USE
+            self.dcb_dict[t] = dcb
+
+        _LOGGER.debug("[RS] Closing serial port.  DCB dict: {}".format(self.dcb_dict))        
+        transport.close()          # Close the port
+                      
+    async def async_write_bytes(self, tstat_id, dcb_addr, datal):
         
-    def write_bytes(self, dcb_addr, datal):
-        tstat_id = self.address
+        read_bytes = []
+        class OutputProtocol(asyncio.Protocol):
+            def connection_made(self, transport):
+                self.transport = transport
+                _LOGGER.info("[RS] Port opened")
+
+            def data_received(self, data):
+                _LOGGER.debug("[RS] Data received: (length): {}   ({})".format(data,len(data)))
+                for b in data:
+                    read_bytes.append(b)
+                # stop callbacks immeditely ?
+                #self.pause_reading()
+
+            def connection_lost(self, exc):
+                _LOGGER.info("[RS] Connection lost")
+                self.port_open = False
+                #self.transport.loop.stop()
+
+            def pause_writing(self):
+                _LOGGER.debug("[RS] Pause writing")
+                _LOGGER.debug(self.transport.get_write_buffer_size())
+
+            def resume_writing(self):
+                _LOGGER.debug(self.transport.get_write_buffer_size())
+                _LOGGER.debug("[RS] Resume writing")
+
+        # Opens a non RFC2217 TCP/IP socket for serial
+        self.port_open = True
+        _LOGGER.debug("[RS] Opening serial port")        
+        loop = asyncio.get_running_loop()
+        transport, protocol = await serial_asyncio.create_serial_connection(loop, OutputProtocol, self.port)
+
         payload = len(datal)  # Since writing - payload is length of bytes to write
         _LOGGER.debug("[RS] Writing num bytes: {} to tstatid={}, {}".format(payload,tstat_id,datal))
 
@@ -144,312 +455,20 @@ class HeatmiserThermostat(object):
         crc = CRC16()
         msg = msg + crc.run(msg)
         string = bytes(msg)
-#       print ("String wirtten =", string)
 
-        try:
-            self.uh1_conn.serport.write(string)   # Write a message (no reply)
-            return True
-        except serial.SerialTimeoutException:
-            _LOGGER.error("[RS] Write timeout error: {}".format(serror))
-            return False              
+        _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
+        transport.write(string)   # Write a string but this time no reply
+        await asyncio.sleep(0.1)
 
-    def refresh_data(self):
-        _LOGGER.debug("[RS] HeatmiserThermostat refresh_data called")
+        _LOGGER.debug("[RS] Closing serial port")        
+        transport.close()          # Close the port
 
-        if self.uh1_conn.open_port() == False:
-            _LOGGER.error("[RS] Port open failed - abort read")
-        else:
-            if self.model == BYTEMASK:
-                self.model = self.read_bytes(4,1)[0]    # 2,3 =PRT, 4 =PRT-HW
-
-            self.target_temp = self.read_bytes(18,1)[0]
-            self.heat_status = self.read_bytes(41,1)[0]
-            self.run_mode = self.read_bytes(23,1)[0]
-            self.away_temp = self.read_bytes(17,1)[0]
-
-            dataw = self.read_bytes(38,2)
-            msb = dataw[0]<<8
-            lsb = dataw[1]
-            self.room_temp = (msb + lsb) / 10
-
-            if self.model == 4:
-                _LOGGER.debug("[RS] HeatmiserThermostat support HW - read status")
-                self.hw_status = self.read_bytes(42,1)[0]
-            else:
-                self.hw_status = 0
-        
-            self.day = self.read_bytes(43,1)[0]
-            datal=self.read_bytes(44,3)
-            self.time = datal[0]*3600 + datal[1]*60 + datal[2] 
-            
-            datal=self.read_bytes(24,2)
-            self.holiday = datal[0]*256+datal[1]
-
-        self.uh1_conn.close_port()
-
-    def get_model(self):
-        return self.model
-
-    def get_target_temp(self):
-        return self.target_temp
-
-    def set_target_temp(self, temperature):
-        """
-        Updates the set taregt temperature and then 
-        """
-        _LOGGER.info("[RS] HeatmiserThermostat set_target_temp called")
-
-        if 35 < temperature < 5:
-            _LOGGER.error("[RS] Refusing to set temp outside of allowed range (5-35)")
-        else:
-            if self.uh1_conn.open_port() == False:
-                _LOGGER.error("[RS] Port open failed - abort write")
-            else:
-                datal = [temperature]
-                self.write_bytes(18, datal)
-                self.target_temp = temperature
-            self.uh1_conn.close_port()
-
-    def get_away_temp(self):
-        return self.away_temp
-
-    def set_away_temp(self, temperature):
-        """
-        Updates the Away temperature 
-        """
-        _LOGGER.info("[RS] HeatmiserThermostat set_away_temp called")
-
-        if 17 < temperature < 7:
-            _LOGGER.error("[RS] Refusing to set temp outside of allowed range (7-17)")
-        else:
-            if self.uh1_conn.open_port() == False:
-                _LOGGER.error("[RS] Port open failed - abort write")
-            else:
-                datal = [temperature]
-                self.write_bytes(17, datal)
-                self.away_temp = temperature
-            self.uh1_conn.close_port()
-
-    def get_heat_status(self):
-        return self.heat_status
-
-    def get_run_mode(self):
-        return self.run_mode
-
-    def set_run_mode(self, heat_away):
-        """
-        Updates the set run_mode HEAT_MODE=0 (deafult) AWAY=1 (aka frost protect)
-        """
-        _LOGGER.info("[RS] HeatmiserThermostat set_run_mode called with {}".format(heat_away))
-
-        if self.uh1_conn.open_port() == False:
-            _LOGGER.error("[RS] Port open failed - abort write")
-        else:
-            datal = [heat_away]
-            self.write_bytes(23, datal)  #Set away mode        
-            self.run_mode = heat_away
-            """ if heat_away == HEAT_MODE:
-                self.set_holidy(0)           # Set holiday to 0 hours
-            else:                            # then it must be away mode
-                self.set_holidy(1008)        # Set holiday to 1008 hours to ensure HW stays off
-            """            
-            self.uh1_conn.close_port()
-
-    def get_heat_state(self):
-        return self.heat_state
-
-    def get_room_temp(self):
-        return self.room_temp
-
-    def get_hotwater_status(self):
-        return self.hw_status
-
-    def set_hotwater_state(self, onoff):
-        """
-        Sets the HW state - NOTE:  0=TIMER,  ON=1,  FORCE OFF=2
-        """
-        _LOGGER.info("[RS] HeatmiserThermostat set_hotwater_state called with {}".format(onoff))
-
-        if self.model != 4:
-            _LOGGER.error("[RS] Refusing to set hot-water as incorrect thermo model")
-        else:
-            if self.uh1_conn.open_port() == False:
-                _LOGGER.error("[RS] Port open failed - abort write")
-            else:
-                datal = [onoff]
-                self.write_bytes(42, datal)
-            self.uh1_conn.close_port()
-
-    def get_day(self):
-        return self.day
-
-    def get_time(self):
-        return self.time
-
-    def set_daytime(self, day, hour, mins, secs):
-        """
-        Update the day and time NOTE: have to do together as in the same funtion group (see Hetamiser v3 protocol doc)  
-        """
-        _LOGGER.info("[RS] HeatmiserThermostat set_daytime called with tsatid={}, DD,HH,MM,SS={},{},{},{}".format(self.address, day,hour,mins,secs))
-
-        if self.uh1_conn.open_port() == False:
-            _LOGGER.error("[RS] Port open failed - abort read")
-        else:
-            datal = [day, hour, mins, secs]
-            self.write_bytes(43, datal)
-        self.uh1_conn.close_port()
-
-    def get_heat_schedule(self, weekend):
-        """
-        NOTE:  not using the self data array but reading direct from thermo
-        """
-        if (weekend == True):
-            dcb_addr = WEEKDAY_ADDR
-        else:
-            dcb_addr = WEEKEND_ADDR
-
-        if self.uh1_conn.open_port() == False:
-            _LOGGER.error("[RS] Port open failed in get_schedule - continue read")
-        data_array = self.read_bytes(dcb_addr, 12) #read 12 bytes
-        self.uh1_conn.close_port()
-        return data_array
-
-    def get_dhw_schedule(self, weekend):
-        """
-        NOTE:  not using the self data array but reading direct from thermo
-        """
-        if (weekend == True):
-            dcb_addr = WEEKEND_DHW_ADDR
-        else:
-            dcb_addr = WEEKDAY_DHW_ADDR
-
-        if self.uh1_conn.open_port() == False:
-            _LOGGER.error("[RS] Port open failed in get_dhw_schedule - abort read")
-        else:
-            data_array = self.read_bytes(dcb_addr, 16) #read 16 bytes for 4 on/offs
-        self.uh1_conn.close_port()
-        return data_array
-
-    def set_heat_schedule(self, weekend, sched_array):
-        """
-        not using the self data array but setting direct to thermo
-        NOTE: CAN ONLY USE 30 Minute intervals to program 
-        """
-        _LOGGER.info("[RS] HeatmiserThermostat set_schedule called (Heating)")
-        if (weekend == True):
-            dcb_addr = WEEKEND_ADDR
-        else:
-            dcb_addr = WEEKDAY_ADDR
-
-        if self.uh1_conn.open_port() == False:
-            _LOGGER.error("[RS] Port open failed in set_heat_schedule - continue write")
-        _LOGGER.info("[RS] set_heat_schedule called with tsatid={}, DCB={}, {}".format(self.address, dcb_addr, sched_array))
-        err_code = self.write_bytes(dcb_addr, sched_array) #write schedule array (12 bytes)
-        self.uh1_conn.close_port()
-        return err_code
-
-    def set_dhw_schedule(self, weekend, sched_array):
-        """
-        NOTE:  not using the self data array but setting direct to thermo
-        """
-        _LOGGER.info("[RS] HeatmiserThermostat set_dhw_schedule called (Hot water)")
-        if (weekend == True):
-            dcb_addr = WEEKEND_DHW_ADDR
-        else:
-            dcb_addr = WEEKDAY_DHW_ADDR
-
-        if self.uh1_conn.open_port() == False:
-            _LOGGER.error("[RS] Port open failed in set_dhw_schedule- continue write")
-        err_code = self.write_bytes(dcb_addr, sched_array) #write schedule array (16 bytes)
-        self.uh1_conn.close_port()
-        return err_code
-
-
-    def get_holiday(self):
-        return self.holiday
-
-    def set_holiday(self, hours):
-        """
-        Jam holiday to max 1008 hrs (42 days) (note it swaps to read)  
-        """
-        _LOGGER.info("[RS] HeatmiserThermostat set_holiday called")
-
-        if self.uh1_conn.open_port() == False:
-            _LOGGER.error("[RS] Port open failed - abort read")
-        else:
-            lo = hours & 255
-            hi = int (hours/256)
-            datal = [lo, hi]
-            _LOGGER.info("[RS] Wirting following data bytes {}".format(datal))
-
-            self.write_bytes(24, datal)
-        self.uh1_conn.close_port()
-
-class UH1(object):
-    """
-    UH1 connection to the Heatmiser system
-    """
-    def __init__(self, ipaddress, port):
-        _LOGGER.info("[RS] UH1 __init__ called")
-        self._host = ipaddress
-        self._port = port
-        self.serport = None
-
-    def connect(self):
-        if self.serport:
-            _LOGGER.info("[RS] Using existing UH1 session")
-            return
-
-        try:
-            _LOGGER.info("[RS] Opening socket to brdige")
-            # Opens a non RFC2217 TCP/IP socket for serial
-            serport = serial.serial_for_url("socket://" + self._host + ":" + self._port, timeout=1)
-            # Close the port agin since defaults open and want to manually open
-            serport.close() 
-        except serial.serialutil.SerialException:
-            _LOGGER.error("[RS] Error opening TCP/IP serial: {}".format(serror))
-            raise Exception("Connection Error")   
-        self.serport = serport
-        _LOGGER.info("[RS] Conn handle = {}".format(self.serport))
-
-    def get_thermostat(self, id_number):
+    def get_thermostat(self, id_number, room):
         """
         Get a thermostat object by id number (just used to test connection)
         :param id_number: The ID of the desired thermostat (1-8 on a single UH1)
         """
-        return (HeatmiserThermostat(id_number, self))
-        
-    def open_port(self):
-        _LOGGER.debug("[RS] HeatmiserConn open_port called")
-        _LOGGER.debug("[RS] Oppning Conn handle = {}".format(self.serport))
-        
-        if self.serport == None:
-            _LOGGER.error("[RS] Soemthing wrong - no conn handel")
-            return (False)
+        return (HeatmiserThermostat(id_number, room, self))
 
-        if self.serport.is_open == True:
-            _LOGGER.error("[RS] Serial port already open - abort read")
-            return (False)
-        else:
-            _LOGGER.debug("[RS] Opening serial port.")
-            self.serport.open()
-
-        return (True)
-
-    def close_port(self):
-        _LOGGER.debug("[RS] close_port called, closing Conn = {}".format(self.serport))
-        try:
-            self.serport.close() 
-        except serial.serialutil.SerialException:
-            _LOGGER.error("[RS] Error closing serial: {}".format(serror))
-            raise Exception("Connection Error")   
-		
     def __del__(self):
-        _LOGGER.info("[RS] __del__ called, closing Conn = {}".format(self.serport))
-        try:
-            self.serport.close() 
-        except serial.serialutil.SerialException:
-            _LOGGER.error("[RS] Error closing serial: {}".format(serror))
-            raise Exception("Connection Error")   
-         
-
+        _LOGGER.info("[RS] UH1 __del__ called, nothing to do...")

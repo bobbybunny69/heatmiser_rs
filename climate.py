@@ -1,11 +1,20 @@
 """Support for the PRT Heatmiser themostats using the V3 protocol."""
 import logging
 from typing import List
+from datetime import timedelta
+import async_timeout
 
 from . import heatmiserRS as heatmiser 
 import voluptuous as vol
 
 from .const import *
+
+from homeassistant.core import callback
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
 
 from homeassistant.components.climate import PLATFORM_SCHEMA, ClimateEntity
 from homeassistant.components.climate.const import (
@@ -35,24 +44,35 @@ from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass, config_entry, async_add_entities, discovery_info=None):
+async def async_setup_entry(hass, entry, async_add_entities):
     """Set up the heatmiser thermostat."""
-    conf = config_entry.data
+    conf = entry.data
     _LOGGER.info("[RS] Climate Entry setup called with Config = {}".format(conf))
 
-    await async_setup_reload_service(hass, DOMAIN, PLATFORMS)
-
-    uh1 = heatmiser.UH1(conf[CONF_HOST], conf[CONF_PORT])
-    uh1.connect()
-     
+    uh1 = heatmiser.UH1_com(conf[CONF_HOST], conf[CONF_PORT])
     heatmiser_v3_thermostat = heatmiser.HeatmiserThermostat
-
     thermostats = conf[CONF_THERMOSTATS]
+ 
+    #heatmiser_rs_api = hass.data[DOMAIN][entry.entry_id]
+    coordinator = HeatmiserRS_Coordinator(hass, uh1, conf[CONF_THERMOSTATS])
+    
+    # Fetch initial data so we have data when entities subscribe
+    #
+    # If the refresh fails, async_config_entry_first_refresh will
+    # raise ConfigEntryNotReady and setup will try again later
+    #
+    # If you do not want to retry setup on failure, use
+    # coordinator.async_refresh() instead
+    #
+
+    await coordinator.async_refresh()
+ 
+    #await coordinator.async_config_entry_first_refresh()
 
     async_add_entities(
         [
-            HeatmiserATThermostat(heatmiser_v3_thermostat, thermostat, uh1)
-            for thermostat in thermostats
+        HeatmiserATThermostat(coordinator, heatmiser_v3_thermostat, thermostat, uh1)
+        for thermostat in thermostats
         ],
         True,
     )
@@ -74,21 +94,59 @@ async def async_setup_entry(hass, config_entry, async_add_entities, discovery_in
         "async_set_daytime",
     )
 
+class HeatmiserRS_Coordinator(DataUpdateCoordinator):
+    """My custom coordinator."""
 
+    def __init__(self, hass, uh1_con, thermostats):
+        """Initialize my coordinator."""
+        _LOGGER.debug("[RS] Coordinator _init_ with thermostats = {}".format(thermostats))
+        super().__init__(
+            hass,
+            _LOGGER,
+            # Name of the data. For logging purposes.
+            name="heatmiser_rs",
+            # Polling interval. Will only be polled if there are subscribers.
+            update_interval=timedelta(seconds=30),
+        )
+        self.uh1_con = uh1_con
+        self.tstats = thermostats
+       
+    async def _async_update_data(self):
+        """Fetch data from API endpoint.
 
-class HeatmiserATThermostat(ClimateEntity):
-    """Representation of a Heatmiser thermostat in the AT0."""
+        This is the place to pre-process the data to lookup tables
+        so entities can quickly look up their data.
+        """
+        async with async_timeout.timeout(10):
+            # Grab active context variables to limit data required to be fetched from API
+            # Note: using context is not required if there is no need or ability to limit
+            # data retrieved from API.
+            _LOGGER.debug("[RS] Coordinator _async_update_data called with ids = {}".format(self.tstats))
+            await self.uh1_con.async_read_dcbs(self.tstats)
+            
 
-    def __init__(self, hmv3_therm, device, uh1):
+class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
+    """Heatmiser thermostat Entity using CoordinatorEntity
+    The CoordinatorEntity class provides:
+      should_poll
+      async_update
+      async_added_to_hass
+      available
+    """
+
+    def __init__(self, coordinator, hmv3_therm, device, uh1):
+        """Pass coordinator to CoordinatorEntity."""
+        super().__init__(coordinator)
+        
         """Initialize the thermostat."""
-        self.therm = hmv3_therm(device[CONF_ID], uh1)    # Do not send UH1 handle as done in config flow
+        self.therm = hmv3_therm(device[CONF_ID], device[CONF_NAME], uh1)    # Do not send UH1 handle as done in config flow
         self._name = device[CONF_NAME]
         self._current_temperature = None
         self._target_temperature = None
         self._attr_preset_modes = [PRESET_HOME, PRESET_AWAY]
         self._attr_preset_mode = None
         self._fan_mode = None
-        self._id = device
+        self._id = device[CONF_ID]
         self._hvac_mode = None
         self._temperature_unit = TEMP_CELSIUS
         self._supported_features = SUPPORT_TARGET_TEMPERATURE | SUPPORT_PRESET_MODE | SUPPORT_FAN_MODE
@@ -136,16 +194,16 @@ class HeatmiserATThermostat(ClimateEntity):
         Need to be a subset of HVAC_MODES.
         """
         return [FAN_ON, FAN_OFF]
-
-    def set_fan_mode(self, set_mode_to):
+    
+    async def async_set_fan_mode(self, set_mode_to):
         """Using set_fan_mode to set hot water status """
         if (set_mode_to == FAN_ON):
             _LOGGER.info("set_fan_mode called FAN_ON")
-            self.therm.set_hotwater_state(HW_F_ON)
+            await self.therm.async_set_hotwater_state(HW_F_ON)
             self._fan_mode = FAN_ON
         else:
             _LOGGER.info("set_fan_mode called FAN_OFF - setting DHW off")
-            self.therm.set_hotwater_state(HW_F_OFF)
+            await self.therm.async_set_hotwater_state(HW_F_OFF)
             self._fan_mode = FAN_OFF
         
     @property
@@ -158,15 +216,41 @@ class HeatmiserATThermostat(ClimateEntity):
         """Return the temperature we try to reach."""
         return self._target_temperature
 
-    def set_temperature(self, **kwargs):
+    async def async_set_temperature(self, **kwargs):
         """Set new target temperature."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
         self._target_temperature = int(temperature)
-        self.therm.set_target_temp(self._target_temperature)
+        await self.therm.async_set_target_temp(self._target_temperature)
+
+    @callback
+    def _async_handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        _LOGGER.debug("[RS] _handle_coordinator_update called")
+        self.therm.refresh_dcb()
+        self._temperature_unit = TEMP_CELSIUS  ## TODO:  Make it read units and adjust
+        self._current_temperature = self.therm.get_room_temp()
+        self._target_temperature = self.therm.get_target_temp()
+        self._fan_mode = (
+            FAN_OFF
+            if (int(self.therm.get_hotwater_status()) == 0)
+            else FAN_ON
+        )
+        self._hvac_mode = (
+            HVAC_MODE_OFF
+            if (int(self.therm.get_heat_status()) == 0)
+            else HVAC_MODE_HEAT
+        )
+        self._attr_preset_mode = (
+            PRESET_HOME
+            if (int(self.therm.get_run_mode()) == HEAT_MODE)
+            else PRESET_AWAY
+        )
+        _LOGGER.debug("[RS] Preset mode = {}".format(self._attr_preset_mode))
+        self.async_write_ha_state()
 
     async def async_update(self):
         _LOGGER.debug("[RS] async_update called")
-        self.therm.refresh_data()
+        self.therm.refresh_dcb()
         self._temperature_unit = TEMP_CELSIUS  ## TODO:  Make it read units and adjust
         self._current_temperature = self.therm.get_room_temp()
         self._target_temperature = self.therm.get_target_temp()
@@ -200,11 +284,11 @@ class HeatmiserATThermostat(ClimateEntity):
             return
         else:
             if preset_mode == PRESET_HOME:
-                self.therm.set_run_mode(HEAT_MODE)
-                self.therm.set_hotwater_state(HW_TIMER)
+                await self.therm.async_set_run_mode(HEAT_MODE)
+                #await self.therm.async_set_hotwater_state(HW_TIMER)
             else:
-                self.therm.set_run_mode(AWAY)
-                self.therm.set_hotwater_state(HW_F_OFF)
+                await self.therm.async_set_run_mode(AWAY)
+                #await self.therm.async_set_hotwater_state(HW_F_OFF)
             self._attr_preset_mode = preset_mode
 
     async def async_set_heat_schedule(self, day, time1, temp1, time2=None, temp2=15, time3=None, temp3=15, time4=None, temp4=15):
@@ -243,7 +327,7 @@ class HeatmiserATThermostat(ClimateEntity):
         else:
             weekend = False
         _LOGGER.info("[RS] Set heat sched with Weekend={}, {}".format(weekend, sched))
-        self.therm.set_heat_schedule(weekend, sched)
+        self.therm.async_set_heat_schedule(weekend, sched)
 
     async def async_set_dhw_schedule(self, day, wakeup_time):
         """Handle Set DHW service call (hard coded arrays at moment)"""
@@ -259,7 +343,7 @@ class HeatmiserATThermostat(ClimateEntity):
         else:
             weekend = False
         _LOGGER.info("[RS] Set DHW sched with Weekend={}, {}".format(weekend, sched))
-        self.therm.set_dhw_schedule(weekend, sched)
+        await self.therm.async_set_dhw_schedule(weekend, sched)
 
     async def async_set_daytime(self, day, set_time):
         """Handle Set Daytime service call"""
@@ -270,7 +354,4 @@ class HeatmiserATThermostat(ClimateEntity):
         secs =set_time.second
         _LOGGER.info("[RS] Set daytime sched with day={} hour={} mins={} secs={}".format(day, hour, mins, secs))
         day_num = days[day]
-        self.therm.set_daytime(day_num, hour, mins, secs)
-
-
-
+        await self.therm.async_set_daytime(day_num, hour, mins, secs)

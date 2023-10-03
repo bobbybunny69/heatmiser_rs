@@ -2,7 +2,8 @@
 This is my heatmiser_rs custom component
 v1:  this was the first attempt using config flow and works well
 v2:  change logging level to DEBUG now I have it working for majority of messages
-v3:  move to awaiting async_forward_entry_setups, only open serport at init instead of each access 
+v3:  move to awaiting async_forward_entry_setups, only open serport at init instead of each access
+v4:  Coordinator dev branch 
 TODO:   Change serport to async to get rid of serport.close() blocking errors in HA
 """
 from datetime import timedelta

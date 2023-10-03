@@ -34,13 +34,13 @@ async def validate_conn(self, hass: core.HomeAssistant, data):
 
 
 #  Not bothering validtaing the thermostats for now 
-async def validate_tstat(hass: core.HomeAssistant, data):
+async def validate_tstat(self, hass: core.HomeAssistant, data):
     """Validate the user input allows us to connect to thermo.
     data has the keys from TSTATS_SCHEMA with values provided by the user.
     """
  
     try:
-        await hass.async_add_executor_job(self.uh1.get_thermostat(data[CONF_ID]))
+        await hass.async_add_executor_job(self.uh1.get_thermostat(data[CONF_ID], data[CONF_NAME]))
     except requests.exceptions.Timeout as ex:
         raise InvalidThermostat from ex
 
@@ -59,16 +59,16 @@ class HeatmiserRSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             # Validate the user input connects
-            self.uh1 = heatmiser.UH1(user_input[CONF_HOST], user_input[CONF_PORT])
+            self.uh1 = heatmiser.UH1_com(user_input[CONF_HOST], user_input[CONF_PORT])
 
-            try:
-                await self.hass.async_add_executor_job(self.uh1.connect)
+            """try:
+                await self.hass.async_add_executor_job(self.uh1.async_read_dcbs([1]))
             except requests.exceptions.Timeout as ex:
                 raise CannotConnect from ex
                 errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
+                errors["base"] = "unknown"""
                 
             if "base" not in errors:
                 # Input is valid, set data
@@ -86,7 +86,7 @@ class HeatmiserRSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Validate the thermos connect with user input.
  
             try:
-                self.uh1.get_thermostat(user_input[CONF_ID])
+                self.uh1.get_thermostat(user_input[CONF_ID], user_input[CONF_NAME])
             except requests.exceptions.Timeout as ex:
                 raise InvalidThermostat from ex
                 errors["base"] = "invalid_thermostat"
