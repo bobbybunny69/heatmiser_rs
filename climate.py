@@ -195,14 +195,14 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         """
         return [FAN_ON, FAN_OFF]
     
-    async def async_set_fan_mode(self, set_mode_to):
+    async def async_set_fan_mode(self, fan_mode):
         """Using set_fan_mode to set hot water status """
-        if (set_mode_to == FAN_ON):
-            _LOGGER.info("set_fan_mode called FAN_ON")
+        if (fan_mode == FAN_ON):
+            _LOGGER.info("[RS] set_fan_mode called FAN_ON")
             await self.therm.async_set_hotwater_state(HW_F_ON)
             self._fan_mode = FAN_ON
         else:
-            _LOGGER.info("set_fan_mode called FAN_OFF - setting DHW off")
+            _LOGGER.info("[RS] set_fan_mode called FAN_OFF - setting DHW off")
             await self.therm.async_set_hotwater_state(HW_F_OFF)
             self._fan_mode = FAN_OFF
         
