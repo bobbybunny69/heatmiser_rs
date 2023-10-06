@@ -76,7 +76,7 @@ class HeatmiserThermostat(object):
         self.uh1_com = uh1
         
     def refresh_dcb(self):
-        _LOGGER.debug("[RS] HeatmiserThermostat refresh_data called")
+        _LOGGER.debug("[RS] HeatmiserThermostat refresh_dcb called for tstat {}".format(self.tstat_id))
         self.dcb = self.uh1_com.dcb_dict[self.tstat_id]
         _LOGGER.debug("[RS] DCB contents (length): {}   ({})".format(self.dcb,len(self.dcb)))
         self.model = self.dcb[MODEL_ADDR] 

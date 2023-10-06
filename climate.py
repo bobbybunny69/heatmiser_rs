@@ -223,7 +223,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         await self.therm.async_set_target_temp(self._target_temperature)
 
     @callback
-    def _async_handle_coordinator_update(self) -> None:
+    def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         _LOGGER.debug("[RS] _handle_coordinator_update called")
         self.therm.refresh_dcb()
