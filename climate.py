@@ -73,9 +73,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
     # coordinator.async_refresh() instead
     #
 
-    await coordinator.async_refresh()
- 
-    #await coordinator.async_config_entry_first_refresh()
+    #await coordinator.async_refresh()
+    await coordinator.async_config_entry_first_refresh()
 
     async_add_entities(
         [
@@ -102,6 +101,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
         "async_set_daytime",
     )
 
+    entry.add_update_listener(coordinator)
+
 class HeatmiserRS_Coordinator(DataUpdateCoordinator):
     """My custom coordinator."""
 
@@ -110,11 +111,9 @@ class HeatmiserRS_Coordinator(DataUpdateCoordinator):
         _LOGGER.debug("[RS] Coordinator _init_ with thermostats = {}".format(thermostats))
         super().__init__(
             hass,
-            _LOGGER,
-            # Name of the data. For logging purposes.
+            _LOGGER,    # Name of the data. For logging purposes.
             name="heatmiser_rs",
-            # Polling interval. Will only be polled if there are subscribers.
-            update_interval=timedelta(seconds=30),
+            update_interval=timedelta(seconds=30),        # Polling interval. Will only be polled if there are subscribers.
         )
         self.uh1_con = uh1_con
         self.tstats = thermostats
