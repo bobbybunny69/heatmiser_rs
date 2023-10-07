@@ -3,6 +3,7 @@
 # Assume Python 3.10.x +
 # My version to do a more atomic reading of the stats
 
+
 import asyncio
 import serial
 import logging
@@ -74,6 +75,7 @@ class HeatmiserThermostat(object):
         self.dcb = None   # Dummy array of correct type
         self.room = room
         self.uh1_com = uh1
+        self.target_temp = None
         
     def refresh_dcb(self):
         _LOGGER.debug("[RS] HeatmiserThermostat refresh_dcb called for tstat {}".format(self.tstat_id))
@@ -343,11 +345,17 @@ class UH1_com:
         except serial.serialutil.SerialException as serror:
             _LOGGER.error("[RS] Error opening TCP/IP serial: {}".format(serror))
         self.serport = serport
-        _LOGGER.info("[RS] Serial port opened with conn handle = {}".format(self.serport))
-
+        _LOGGER.info("[RS] Serial port conn handle = {}".format(self.serport))
         self.dcb_dict = {}
 
-    def read_dcb(self, tstat_id):
+    async def async_read_dcb(self, tstat_id):
+        if(self.serport.is_open==False):
+            try:
+                self.serport.open()
+            except serial.SerialTimeoutException as serror:
+                _LOGGER.error("[RS] Error openinng port: {}".format(serror))
+                return None
+
         """ Send command frame to read entire DCB for tstat_id """
         payload = 0  # Since reading - payload is length of bytes to write
         dcb_addr_lo = 0
@@ -360,14 +368,10 @@ class UH1_com:
         string = bytes(msg)
         _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
         string = bytes(msg)
-        try:
-            self.serport.write(string)   # Write a string to trigger tsat to send back a DCB
-        except serial.SerialTimeoutException as serror:
-            _LOGGER.error("[RS] Write timeout error: {}".format(serror))
-            return None
+        self.serport.write(string)   # Write a string to trigger tsat to send back a DCB
 
-        read_bytes=[]
         """ Read 9 byte header and get length of DCB """
+        read_bytes=[]
         HEADER_BYTES=9
         read_bytes = list(self.serport.read(HEADER_BYTES))
         _LOGGER.debug("[RS] Header bytes read = {}".format(read_bytes))
@@ -383,17 +387,28 @@ class UH1_com:
         _LOGGER.debug("[RS] CRC check Read:Computed = {}:{}".format(crc_r, crc.run(read_bytes)))  
         """ TODO: Check why CRC not matching  """
 
+        def blocking_serport_close():
+            self.serport.close()
+        loop=asyncio.get_running_loop()
+        await loop.run_in_executor(None, blocking_serport_close)
         return(dcb)
 
     async def async_read_dcbs(self, tstats):
         tstat_ids = [ t["id"] for t in tstats ]
         _LOGGER.debug("[RS] UH1 async_read_dcbs called - for TSTATs {}".format(tstat_ids))
         for t in tstat_ids:
-            dcb = self.read_dcb(t)
+            dcb = await self.async_read_dcb(t)
             if(dcb!=None):
                 self.dcb_dict[t] = dcb
                       
     async def async_write_bytes(self, tstat_id, dcb_addr, datal):
+        if(self.serport.is_open==False):
+            try:
+                self.serport.open()
+            except serial.SerialTimeoutException as serror:
+                _LOGGER.error("[RS] Error openinng port: {}".format(serror))
+                return None
+
         """ Construct and send the command frame """
         payload = len(datal)  # Since writing - payload is length of bytes to write
         _LOGGER.debug("[RS] Writing num bytes: {} to tstatid={}, {}".format(payload,tstat_id,datal))
@@ -407,16 +422,17 @@ class UH1_com:
         msg = msg + crc.run(msg)
         string = bytes(msg)
         _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
-        try:
-            self.serport.write(string)   # Write a message (no reply)
-        except serial.SerialTimeoutException as serror:
-            _LOGGER.error("[RS] Write timeout error: {}".format(serror))
-            return False
+        self.serport.write(string)   # Write a message (no reply)
         
         """ Read reply frame  """
         REPLY_BYTES=7
         read_bytes = list(self.serport.read(REPLY_BYTES))
         _LOGGER.debug("[RS] Response bytes read = {}".format(read_bytes))
+        
+        def blocking_serport_close():
+            self.serport.close()
+        loop=asyncio.get_running_loop()
+        await loop.run_in_executor(None, blocking_serport_close)
         return True
 
     def get_thermostat(self, id_number, room):
@@ -425,10 +441,3 @@ class UH1_com:
         :param id_number: The ID of the desired thermostat (1-8 on a single UH1)
         """
         return (HeatmiserThermostat(id_number, room, self))
-
-    def __del__(self):
-        _LOGGER.info("[RS] UH1 __del__ called, closing Conn = {}".format(self.serport))
-        try:
-            self.serport.close() 
-        except serial.serialutil.SerialException as serror:
-            _LOGGER.error("[RS] Error closing serial: {}".format(serror))

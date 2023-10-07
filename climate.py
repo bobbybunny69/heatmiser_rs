@@ -1,4 +1,12 @@
-"""Support for the PRT Heatmiser themostats using the V3 protocol."""
+"""Support for the PRT Heatmiser themostats using the V3 protocol.  Supports:
+        HVAC_MODE:  Heat, Off (does not modify DHW)
+        PRESET_MODE:  Home, Away (also modifies DHW)
+        FAN_MODE:  On, Off (Used for DHW control)  
+    Also adds custom services to:
+        set heating schedule (only Weekday/Weekend mode supportted)
+        set DHW schedule (only Weekday/Weekend mode supportted)
+        set date/time   """
+
 import logging
 from typing import List
 from datetime import timedelta
@@ -143,8 +151,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         self._name = device[CONF_NAME]
         self._current_temperature = None
         self._target_temperature = None
-        self._attr_preset_modes = [PRESET_HOME, PRESET_AWAY]
-        self._attr_preset_mode = None
+        self._preset_mode = None
         self._fan_mode = None
         self._id = device[CONF_ID]
         self._hvac_mode = None
@@ -168,19 +175,49 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
 
     @property
     def hvac_modes(self) -> List[str]:
-        """Return the list of available hvac operation modes.
-
-        Need to be a subset of HVAC_MODES.
-        """
-        return [HVAC_MODE_HEAT, HVAC_MODE_OFF]
+        """Return the list of available hvac operation modes."""
+        return [HVAC_MODE_HEAT]
 
     @property
     def hvac_mode(self) -> str:
-        """Return hvac operation ie. heat, cool mode.
-
-        Need to be one of HVAC_MODE_*.
-        """
+        """Return hvac operation ie. heat, cool mode."""
         return self._hvac_mode
+    
+    async def async_set_hvac_mode(self, hvac_mode):
+        """Stub this out 
+        if (hvac_mode == HVAC_MODE_HEAT):
+            _LOGGER.info("[RS] set_hvac_mode called MODE_HEAT")
+            await self.therm.async_set_run_mode(HEAT_MODE)
+            self._hvac_mode = HEAT_MODE
+        else:
+            _LOGGER.info("[RS] set_fan_mode called FAN_OFF - setting DHW off")
+            await self.therm.async_set_run_mode(AWAY)
+        self._hvac_mode = hvac_mode"""
+        return
+
+    
+    @property
+    def preset_modes(self) -> List[str]:
+        """Return the list of available preset modes. """
+        return [PRESET_HOME, PRESET_AWAY]
+
+    @property
+    def preset_mode(self):
+        """Return the current preset status."""
+        return self._preset_mode
+        
+    async def async_set_preset_mode(self, preset_mode: str):
+        """Set new preset mode."""
+        _LOGGER.debug("[RS] async_set_preset_mode called with {}".format(preset_mode))
+ 
+        if preset_mode == PRESET_HOME:
+            await self.therm.async_set_run_mode(HEAT_MODE)
+            await self.therm.async_set_hotwater_state(HW_TIMER)
+        else:
+            await self.therm.async_set_run_mode(AWAY)
+            await self.therm.async_set_hotwater_state(HW_F_OFF)
+        self._preset_mode = preset_mode
+
 
     @property
     def fan_mode(self):
@@ -189,10 +226,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         
     @property
     def fan_modes(self) -> List[str]:
-        """Return the list of available hvac operation modes.
-
-        Need to be a subset of HVAC_MODES.
-        """
+        """Return the list of available Fan modes"""
         return [FAN_ON, FAN_OFF]
     
     async def async_set_fan_mode(self, fan_mode):
@@ -200,12 +234,12 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         if (fan_mode == FAN_ON):
             _LOGGER.info("[RS] set_fan_mode called FAN_ON")
             await self.therm.async_set_hotwater_state(HW_F_ON)
-            self._fan_mode = FAN_ON
         else:
             _LOGGER.info("[RS] set_fan_mode called FAN_OFF - setting DHW off")
             await self.therm.async_set_hotwater_state(HW_F_OFF)
-            self._fan_mode = FAN_OFF
+        self._fan_mode = fan_mode
         
+
     @property
     def current_temperature(self):
         """Return the current temperature."""
@@ -221,6 +255,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         temperature = kwargs.get(ATTR_TEMPERATURE)
         self._target_temperature = int(temperature)
         await self.therm.async_set_target_temp(self._target_temperature)
+
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -271,26 +306,6 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         )
         _LOGGER.debug("[RS] Preset mode = {}".format(self._attr_preset_mode))
 
-    async def async_set_preset_mode(self, preset_mode: str):
-        """Set new preset mode."""
-        _LOGGER.debug("[RS] async_set_preset_mode called with {}".format(preset_mode))
- 
-        if preset_mode not in (self._attr_preset_modes):
-            raise ValueError(
-                f"Got unsupported preset_mode {preset_mode}. Must be one of {self._attr_preset_modes}"
-            )
-        if preset_mode == self._attr_preset_mode:
-            # I don't think we need to call async_write_ha_state if we didn't change the state
-            return
-        else:
-            if preset_mode == PRESET_HOME:
-                await self.therm.async_set_run_mode(HEAT_MODE)
-                #await self.therm.async_set_hotwater_state(HW_TIMER)
-            else:
-                await self.therm.async_set_run_mode(AWAY)
-                #await self.therm.async_set_hotwater_state(HW_F_OFF)
-            self._attr_preset_mode = preset_mode
-
     async def async_set_heat_schedule(self, day, time1, temp1, time2=None, temp2=15, time3=None, temp3=15, time4=None, temp4=15):
         """Handle Set heat schedule service call (hard coded arrays at moment)
             NOTE:  Can only program in 30 minute intrevals """
@@ -334,7 +349,6 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         day = day[0]
         hour = wakeup_time.hour
         mins = wakeup_time.minute
-#        _LOGGER.info("[RS] Set DHW sched with day={} hour={} mins={}".format(day, hour, mins))
         sched = [4,0, 4,30, hour,mins, hour+2,mins, 13,0, 13,30, 19,0, 21,0]
         if day == 'sat':
             weekend = True
