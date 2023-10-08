@@ -101,8 +101,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
         "async_set_daytime",
     )
 
-    entry.add_update_listener(coordinator)
-
 class HeatmiserRS_Coordinator(DataUpdateCoordinator):
     """My custom coordinator."""
 
