@@ -13,12 +13,13 @@ from homeassistant.const import (
 )
 
 ATTR_DAY = "day"
-ATTR_WUP_TIME = "wakeup_time" 
-ATTR_SET_TIME = "set_time" 
+ATTR_SET_TIME = "set_time"
 ATTR_TIME_1 = "time1" 
 ATTR_TIME_2 = "time2" 
 ATTR_TIME_3 = "time3" 
 ATTR_TIME_4 = "time4" 
+ATTR_DUR_HRS1 = "dur_hrs1" 
+ATTR_DUR_HRS2 = "dur_hrs2" 
 ATTR_TEMPERATURE_1 = "temp1" 
 ATTR_TEMPERATURE_2 = "temp2" 
 ATTR_TEMPERATURE_3 = "temp3" 
@@ -47,6 +48,7 @@ CONN_SCHEMA = vol.Schema(
         vol.Required(CONF_PORT, default="5000"): str,
     }
 )
+
 TSTATS_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_ID): cv.positive_int,
@@ -54,13 +56,18 @@ TSTATS_SCHEMA = vol.Schema(
         vol.Optional("add_another"): cv.boolean,
     }
 )
+
 SET_DHW_SCHEDULE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Required(ATTR_DAY): cv.weekdays,
-        vol.Required(ATTR_WUP_TIME): cv.time,
+        vol.Required(ATTR_TIME_1): cv.time,
+        vol.Required(ATTR_DUR_HRS1): cv.positive_int,
+        vol.Required(ATTR_TIME_2): cv.time,
+        vol.Required(ATTR_DUR_HRS2): cv.positive_int,
     }
 )
+
 SET_HEAT_SCHEDULE_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_ENTITY_ID): cv.entity_id,
@@ -75,6 +82,7 @@ SET_HEAT_SCHEDULE_SCHEMA = vol.Schema(
         vol.Optional(ATTR_TEMPERATURE_4): cv.positive_int,
     }
 )
+
 SET_DAYTIME_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_ENTITY_ID): cv.entity_id,

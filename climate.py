@@ -183,7 +183,9 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         return self._hvac_mode
     
     async def async_set_hvac_mode(self, hvac_mode):
-        """Stub this out 
+        """Set new HVAC mode."""
+        _LOGGER.debug("[RS] async_set_hvac_mode called with {}".format(hvac_mode))
+        """Stubbed out
         if (hvac_mode == HVAC_MODE_HEAT):
             _LOGGER.info("[RS] set_hvac_mode called MODE_HEAT")
             await self.therm.async_set_run_mode(HEAT_MODE)
@@ -191,10 +193,8 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         else:
             _LOGGER.info("[RS] set_fan_mode called FAN_OFF - setting DHW off")
             await self.therm.async_set_run_mode(AWAY)
-        self._hvac_mode = hvac_mode"""
-        return
+        self._hvac_mode = hvac_modeS"""
 
-    
     @property
     def preset_modes(self) -> List[str]:
         """Return the list of available preset modes. """
@@ -306,8 +306,8 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         _LOGGER.debug("[RS] Preset mode = {}".format(self._attr_preset_mode))
 
     async def async_set_heat_schedule(self, day, time1, temp1, time2=None, temp2=15, time3=None, temp3=15, time4=None, temp4=15):
-        """Handle Set heat schedule service call (hard coded arrays at moment)
-            NOTE:  Can only program in 30 minute intrevals """
+        """Handle Set heat schedule service call (hard coded arrays at moment)  NOTE:  Can only program in 30 minute intrevals """
+        _LOGGER.debug("[RS] async_set_heat_schedule called with day={}, time1={}, {}".format(day, time1, temp1))
         day = day[0]
         hour1 = time1.hour
         mins1 = time1.minute
@@ -340,31 +340,35 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
             weekend = True
         else:
             weekend = False
-        _LOGGER.info("[RS] Set heat sched with Weekend={}, {}".format(weekend, sched))
-        self.therm.async_set_heat_schedule(weekend, sched)
+        _LOGGER.info("[RS] Setting heat schedule with Weekend={}, {}".format(weekend, sched))
+        await self.therm.async_set_heat_schedule(weekend, sched)
 
-    async def async_set_dhw_schedule(self, day, wakeup_time):
+    async def async_set_dhw_schedule(self, day, time1, dur_hrs1, time2, dur_hrs2):
         """Handle Set DHW service call (hard coded arrays at moment)"""
+        _LOGGER.debug("[RS] async_set_dhw_schedule called with day={}, wakeup_time, duration={},{}".format(day, time1, dur_hrs1))
         day = day[0]
-        hour = wakeup_time.hour
-        mins = wakeup_time.minute
-        sched = [4,0, 4,30, hour,mins, hour+2,mins, 13,0, 13,30, 19,0, 21,0]
+        hr1 = time1.hour
+        mins1 = time1.minute
+        hr2 = time2.hour
+        mins2 = time2.minute
+        sched = [4,0, 4,30, hr1,mins1, hr1+dur_hrs1,mins1, 13,0, 13,30, hr2,mins2, hr2+dur_hrs2,mins2]
         if day == 'sat':
             weekend = True
         elif day == 'sun':
             weekend = True
         else:
             weekend = False
-        _LOGGER.info("[RS] Set DHW sched with Weekend={}, {}".format(weekend, sched))
+        _LOGGER.info("[RS] Setting DHW schedule with Weekend={}, {}".format(weekend, sched))
         await self.therm.async_set_dhw_schedule(weekend, sched)
 
     async def async_set_daytime(self, day, set_time):
         """Handle Set Daytime service call"""
+        _LOGGER.debug("[RS] async_set_daytime called with day={}, wakeup_time={}".format(day, set_time))
         days = {"mon":1, "tue":2, "wed":3, "thu":4, "fri":5, "sat":5, "sun":7}
         day = day[0]
         hour = set_time.hour
         mins = set_time.minute
         secs =set_time.second
-        _LOGGER.info("[RS] Set daytime sched with day={} hour={} mins={} secs={}".format(day, hour, mins, secs))
+        _LOGGER.info("[RS] Setting daytime with day={} hour={} mins={} secs={}".format(day, hour, mins, secs))
         day_num = days[day]
         await self.therm.async_set_daytime(day_num, hour, mins, secs)
