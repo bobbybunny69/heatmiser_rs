@@ -154,7 +154,7 @@ class HeatmiserThermostat(object):
     def get_room_temp(self):
         if self.dcb == None:
             return DUMMY_TEMP
-        msb = self.dcb[ROOMTEMP_ADDR]>>8
+        msb = self.dcb[ROOMTEMP_ADDR]<<8
         lsb = self.dcb[ROOMTEMP_ADDR+1]
         return ((msb+lsb)/10)
 
