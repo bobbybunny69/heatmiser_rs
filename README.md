@@ -20,10 +20,10 @@ __Note:__   `sensors.py` not used but just in case I want to add later
 * creates services for setting the DHW (if supportted) and heating schedules on each thermostats
 
 # Versions (GIT tags)
-v1:  this was the first attempt using config flow and works well
-v2:  change logging level to DEBUG now I have it working for majority of messages
-v3:  move to awaiting async_forward_entry_setups, only open serport at init instead of each access
-v4:  Added coordinator task and fixed blocking calls issue (by adding add_executor asyncio call for serport.close) 
+* v1:  this was the first attempt using config flow and works well
+* v2:  change logging level to DEBUG now I have it working for majority of messages
+* v3:  move to awaiting async_forward_entry_setups, only open serport at init instead of each access
+* v4:  Added coordinator task and fixed blocking calls issue (by adding add_executor asyncio call for serport.close) 
 
 # ToDo
 - [ ] Cooridnator task not updating set values immediately - find out why and fix
