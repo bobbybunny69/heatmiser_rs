@@ -16,10 +16,16 @@ __Note:__   `sensors.py` not used but just in case I want to add later
 
 # Controlling the Thermostats
 * Supports Home and Away modes (falls back to fallback temp when away)
-* Use the fan mode as an overided way of controling Domestic HW (if thermostat supports it)
+* Use the fan mode as an overiden way of controling Domestic HW (if thermostat supports it)
 * creates services for setting the DHW (if supportted) and heating schedules on each thermostats
 
-# ToDO
-- [ ] Get rid of the bocking call complaints in Home Assistant
+# Versions (GIT tags)
+v1:  this was the first attempt using config flow and works well
+v2:  change logging level to DEBUG now I have it working for majority of messages
+v3:  move to awaiting async_forward_entry_setups, only open serport at init instead of each access
+v4:  Added coordinator task and fixed blocking calls issue (by adding add_executor asyncio call for serport.close) 
+
+# ToDo
+- [ ] Cooridnator task not updating set values immediately - find out why and fix
 - [ ] Make the DHW thermostat detection automated (and possibly a sensor)
 
