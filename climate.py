@@ -257,7 +257,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        _LOGGER.debug("[RS] _handle_coordinator_update called")
+        _LOGGER.info("[RS] _handle_coordinator_update called for tstat {}".format(self._id))
         self.therm.refresh_dcb()
         self._temperature_unit = TEMP_CELSIUS  ## TODO:  Make it read units and adjust
         self._current_temperature = self.therm.get_room_temp()
@@ -281,7 +281,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         self.async_write_ha_state()
 
     async def async_update(self):
-        _LOGGER.debug("[RS] async_update called")
+        _LOGGER.info("[RS] async_update called for tstat {}".format(self._id))
         self.therm.refresh_dcb()
         self._temperature_unit = TEMP_CELSIUS  ## TODO:  Make it read units and adjust
         self._current_temperature = self.therm.get_room_temp()
@@ -305,7 +305,6 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
 
     async def async_set_heat_schedule(self, day, time1, temp1, time2=None, temp2=15, time3=None, temp3=15, time4=None, temp4=15):
         """Handle Set heat schedule service call (hard coded arrays at moment)  NOTE:  Can only program in 30 minute intrevals """
-        _LOGGER.debug("[RS] async_set_heat_schedule called with day={}, time1={}, {}".format(day, time1, temp1))
         day = day[0]
         hour1 = time1.hour
         mins1 = time1.minute
@@ -328,7 +327,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
             hour4 = time4.hour
             mins4 = time4.minute
         if(mins1 in [0,30] and mins2 in [0,30] and mins3 in [0,30] and mins4 in [0,30]):
-            _LOGGER.info("[RS] Set heat sched called with valid minute setting")
+            _LOGGER.info("[RS] async_set_heat_schedule called valid mins and day={}, time1={}, {}".format(day, time1, temp1))
         else:
             _LOGGER.error("[RS] Set heat sched called with a non 30 minute interval")
         sched = [hour1,mins1, temp1, hour2,mins2, temp2, hour3,mins3, temp3, hour4,mins4, temp4]
@@ -338,12 +337,12 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
             weekend = True
         else:
             weekend = False
-        _LOGGER.info("[RS] Setting heat schedule with Weekend={}, {}".format(weekend, sched))
+        _LOGGER.debug("[RS] Setting heat schedule with Weekend={}, {}".format(weekend, sched))
         await self.therm.async_set_heat_schedule(weekend, sched)
 
     async def async_set_dhw_schedule(self, day, time1, dur_hrs1, time2, dur_hrs2):
         """Handle Set DHW service call (hard coded arrays at moment)"""
-        _LOGGER.debug("[RS] async_set_dhw_schedule called with day={}, wakeup_time, duration={},{}".format(day, time1, dur_hrs1))
+        _LOGGER.info("[RS] async_set_dhw_schedule called with day={}, wakeup_time, duration={},{}".format(day, time1, dur_hrs1))
         day = day[0]
         hr1 = time1.hour
         mins1 = time1.minute
@@ -356,17 +355,17 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
             weekend = True
         else:
             weekend = False
-        _LOGGER.info("[RS] Setting DHW schedule with Weekend={}, {}".format(weekend, sched))
+        _LOGGER.debug("[RS] Setting DHW schedule with Weekend={}, {}".format(weekend, sched))
         await self.therm.async_set_dhw_schedule(weekend, sched)
 
     async def async_set_daytime(self, day, set_time):
         """Handle Set Daytime service call"""
-        _LOGGER.debug("[RS] async_set_daytime called with day={}, wakeup_time={}".format(day, set_time))
+        _LOGGER.info("[RS] async_set_daytime called with day={}, wakeup_time={}".format(day, set_time))
         days = {"mon":1, "tue":2, "wed":3, "thu":4, "fri":5, "sat":5, "sun":7}
         day = day[0]
         hour = set_time.hour
         mins = set_time.minute
         secs =set_time.second
-        _LOGGER.info("[RS] Setting daytime with day={} hour={} mins={} secs={}".format(day, hour, mins, secs))
+        _LOGGER.debug("[RS] Setting daytime with day={} hour={} mins={} secs={}".format(day, hour, mins, secs))
         day_num = days[day]
         await self.therm.async_set_daytime(day_num, hour, mins, secs)
