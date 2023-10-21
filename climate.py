@@ -214,7 +214,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
             await self.therm.async_set_run_mode(AWAY)
             await self.therm.async_set_hotwater_state(HW_F_OFF)
         self._preset_mode = preset_mode
-
+        self.async_write_ha_state()
 
     @property
     def fan_mode(self):
@@ -235,7 +235,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
             _LOGGER.info("[RS] set_fan_mode called FAN_OFF - setting DHW off")
             await self.therm.async_set_hotwater_state(HW_F_OFF)
         self._fan_mode = fan_mode
-        
+        self.async_write_ha_state()
 
     @property
     def current_temperature(self):
@@ -245,6 +245,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
     @property
     def target_temperature(self):
         """Return the temperature we try to reach."""
+        _LOGGER.debug("[RS] target_temperature read for tstat {} = {}".format(self._id, self._target_temperature))
         return self._target_temperature
 
     async def async_set_temperature(self, **kwargs):
@@ -252,6 +253,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         temperature = kwargs.get(ATTR_TEMPERATURE)
         self._target_temperature = int(temperature)
         await self.therm.async_set_target_temp(self._target_temperature)
+        self.async_write_ha_state()
 
 
     @callback
@@ -280,9 +282,9 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         _LOGGER.debug("[RS] Preset mode = {}".format(self._attr_preset_mode))
         self.async_write_ha_state()
 
-    async def async_update(self):
+    """async def async_update(self):
         _LOGGER.info("[RS] async_update called for tstat {}".format(self._id))
-        self.therm.refresh_dcb()
+        await self.therm.async_refresh_dcb()
         self._temperature_unit = TEMP_CELSIUS  ## TODO:  Make it read units and adjust
         self._current_temperature = self.therm.get_room_temp()
         self._target_temperature = self.therm.get_target_temp()
@@ -301,7 +303,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
             if (int(self.therm.get_run_mode()) == HEAT_MODE)
             else PRESET_AWAY
         )
-        _LOGGER.debug("[RS] Preset mode = {}".format(self._attr_preset_mode))
+        _LOGGER.debug("[RS] Preset mode = {}".format(self._attr_preset_mode))"""
 
     async def async_set_heat_schedule(self, day, time1, temp1, time2=None, temp2=15, time3=None, temp3=15, time4=None, temp4=15):
         """Handle Set heat schedule service call (hard coded arrays at moment)  NOTE:  Can only program in 30 minute intrevals """

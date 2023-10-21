@@ -349,13 +349,6 @@ class UH1_com:
         self.dcb_dict = {}
 
     async def async_read_dcb(self, tstat_id):
-        if(self.serport.is_open==False):
-            try:
-                self.serport.open()
-            except serial.SerialTimeoutException as serror:
-                _LOGGER.error("[RS] Error openinng port: {}".format(serror))
-                return None
-
         """ Send command frame to read entire DCB for tstat_id """
         payload = 0  # Since reading - payload is length of bytes to write
         dcb_addr_lo = 0
@@ -387,20 +380,28 @@ class UH1_com:
         _LOGGER.debug("[RS] CRC check Read:Computed = {}:{}".format(crc_r, crc.run(read_bytes)))  
         """ TODO: Check why CRC not matching  """
 
-        def blocking_serport_close():
-            self.serport.close()
-        loop=asyncio.get_running_loop()
-        await loop.run_in_executor(None, blocking_serport_close)
         return(dcb)
 
     async def async_read_dcbs(self, tstats):
+        if(self.serport.is_open==False):
+            try:
+                self.serport.open()
+            except serial.SerialTimeoutException as serror:
+                _LOGGER.error("[RS] Error openinng port: {}".format(serror))
+                return None
+
         tstat_ids = [ t["id"] for t in tstats ]
         _LOGGER.debug("[RS] UH1 async_read_dcbs called - for TSTATs {}".format(tstat_ids))
         for t in tstat_ids:
             dcb = await self.async_read_dcb(t)
             if(dcb!=None):
                 self.dcb_dict[t] = dcb
-                      
+
+        def blocking_serport_close():
+            self.serport.close()
+        loop=asyncio.get_running_loop()
+        await loop.run_in_executor(None, blocking_serport_close)
+
     async def async_write_bytes(self, tstat_id, dcb_addr, datal):
         if(self.serport.is_open==False):
             try:
