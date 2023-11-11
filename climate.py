@@ -362,8 +362,8 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
 
     async def async_set_daytime(self, day, set_time):
         """Handle Set Daytime service call"""
-        _LOGGER.info("[RS] async_set_daytime called with day={}, wakeup_time={}".format(day, set_time))
-        days = {"mon":1, "tue":2, "wed":3, "thu":4, "fri":5, "sat":5, "sun":7}
+        _LOGGER.info("[RS] async_set_daytime called with day={}, set_time={}".format(day, set_time))
+        days = {"mon":1, "tue":2, "wed":3, "thu":4, "fri":5, "sat":6, "sun":7}
         day = day[0]
         hour = set_time.hour
         mins = set_time.minute
