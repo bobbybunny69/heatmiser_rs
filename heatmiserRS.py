@@ -7,6 +7,7 @@
 import asyncio
 import serial
 import logging
+import time
 
 _LOGGER = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -341,7 +342,7 @@ class UH1_com:
         try:
             _LOGGER.debug("[RS] Opening socket to brdige")
             # Opens a non RFC2217 TCP/IP socket for serial
-            serport = serial.serial_for_url("socket://" + ipaddress + ":" + port, timeout=1)
+            serport = serial.serial_for_url("socket://" + ipaddress + ":" + port, timeout=0.5)
         except serial.serialutil.SerialException as serror:
             _LOGGER.error("[RS] Error opening TCP/IP serial: {}".format(serror))
         self.serport = serport
@@ -361,6 +362,7 @@ class UH1_com:
         string = bytes(msg)
         _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
         string = bytes(msg)
+        await asyncio.sleep(0.1)   # 100ms delay as was getting read errors (assume write was being missed)
         self.serport.write(string)   # Write a string to trigger tsat to send back a DCB
 
         """ Read 9 byte header and get length of DCB """
@@ -385,6 +387,7 @@ class UH1_com:
     async def async_read_dcbs(self, tstats):
         if(self.serport.is_open==False):
             try:
+                _LOGGER.debug("[RS] Opening serport for read dcbs {}".format(self.serport))
                 self.serport.open()
             except serial.SerialTimeoutException as serror:
                 _LOGGER.error("[RS] Error openinng port: {}".format(serror))
@@ -398,6 +401,7 @@ class UH1_com:
                 self.dcb_dict[t] = dcb
 
         def blocking_serport_close():
+            _LOGGER.debug("[RS] Closing serport after read dcbs {}".format(self.serport))
             self.serport.close()
         loop=asyncio.get_running_loop()
         await loop.run_in_executor(None, blocking_serport_close)
@@ -405,6 +409,7 @@ class UH1_com:
     async def async_write_bytes(self, tstat_id, dcb_addr, datal):
         if(self.serport.is_open==False):
             try:
+                _LOGGER.debug("[RS] Opening serport for write {}".format(self.serport))
                 self.serport.open()
             except serial.SerialTimeoutException as serror:
                 _LOGGER.error("[RS] Error openinng port: {}".format(serror))
@@ -431,6 +436,7 @@ class UH1_com:
         _LOGGER.debug("[RS] Response bytes read = {}".format(read_bytes))
         
         def blocking_serport_close():
+            _LOGGER.debug("[RS] Closing serport for write {}".format(self.serport))
             self.serport.close()
         loop=asyncio.get_running_loop()
         await loop.run_in_executor(None, blocking_serport_close)
