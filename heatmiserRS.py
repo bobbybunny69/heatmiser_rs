@@ -7,7 +7,8 @@
 import asyncio
 import serial
 import logging
-import time
+
+from .const import *
 
 _LOGGER = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -100,7 +101,7 @@ class HeatmiserThermostat(object):
             return DUMMY_TEMP
         return self.dcb[TARGET_ADDR]
 
-    async def async_set_target_temp(self, temperature):
+    def set_target_temp(self, temperature):
         """
         Updates the set taregt temperature and then 
         """
@@ -110,7 +111,7 @@ class HeatmiserThermostat(object):
             _LOGGER.error("[RS] Refusing to set temp outside of allowed range (5-35)")
         else:
             datal = [temperature]
-            await self.uh1_com.async_write_bytes(self.tstat_id, TARGET_ADDR, datal)
+            self.uh1_com.write_bytes(self.tstat_id, TARGET_ADDR, datal)
  
     def get_away_temp(self):
         if self.dcb == None:
@@ -118,7 +119,7 @@ class HeatmiserThermostat(object):
         return self.dcb[AWAYTEMP_ADDR]
 
     ### TODO Fix make async but dont think I use this in HA  
-    async def async_set_away_temp(self, temperature):
+    def set_away_temp(self, temperature):
         """
         Updates the Away temperature 
         """
@@ -128,7 +129,7 @@ class HeatmiserThermostat(object):
             _LOGGER.error("[RS] Refusing to set temp outside of allowed range (7-17)")
         else:
             datal = [temperature]
-            await self.uh1_com.async_write_bytes(self.tstat_id, AWAYTEMP_ADDR, datal)
+            self.uh1_com.write_bytes(self.tstat_id, AWAYTEMP_ADDR, datal)
  
     def get_heat_status(self):
         if self.dcb == None:
@@ -140,14 +141,14 @@ class HeatmiserThermostat(object):
             return HEAT_MODE
         return self.dcb[RUNMODE_ADDR]
 
-    async def async_set_run_mode(self, heat_away):
+    def set_run_mode(self, heat_away):
         """
         Updates the set run_mode HEAT_MODE=0 (deafult) AWAY=1 (aka frost protect)
         """
         _LOGGER.info("[RS] HeatmiserThermostat set_run_mode called with {}".format(heat_away))
 
         datal = [heat_away]
-        await self.uh1_com.async_write_bytes(self.tstat_id, RUNMODE_ADDR, datal)
+        self.uh1_com.write_bytes(self.tstat_id, RUNMODE_ADDR, datal)
         
     #def get_heat_state(self):
         #return int.from_bytes(self.dcb[RUNMODE_ADDR+9],'little')
@@ -168,7 +169,7 @@ class HeatmiserThermostat(object):
         else:
             return (0)
 
-    async def async_set_hotwater_state(self, onoff):
+    def set_hotwater_state(self, onoff):
         """
         Sets the HW state - NOTE:  0=TIMER,  ON=1,  FORCE OFF=2
         """
@@ -178,7 +179,7 @@ class HeatmiserThermostat(object):
             _LOGGER.error("[RS] Refusing to set hot-water as incorrect thermo model")
         else:
             datal = [onoff]
-            await self.uh1_com.async_write_bytes(self.tstat_id, DHW_ADDRW, datal)
+            self.uh1_com.write_bytes(self.tstat_id, DHW_ADDRW, datal)
 
     def get_day(self):
         if self.dcb == None:
@@ -200,14 +201,14 @@ class HeatmiserThermostat(object):
         time+= self.dcb[i+2]
         return time
 
-    async def async_set_daytime(self, day, hour, mins, secs):
+    def set_daytime(self, day, hour, mins, secs):
         """
         Update the day and time NOTE: have to do together as in the same funtion group (see Hetamiser v3 protocol doc)  
         """
         _LOGGER.info("[RS] HeatmiserThermostat set_daytime called with tsatid={}, DD,HH,MM,SS={},{},{},{}".format(self.tstat_id, day,hour,mins,secs))
 
         datal = [day, hour, mins, secs]
-        await self.uh1_com.async_write_bytes(self.tstat_id, DAYTIME_ADDRW, datal)
+        self.uh1_com.write_bytes(self.tstat_id, DAYTIME_ADDRW, datal)
 
     def get_heat_schedule(self, weekend):
         """
@@ -241,7 +242,7 @@ class HeatmiserThermostat(object):
         data_array = self.dcb[dcb_addr : dcb_addr+16]   #read 16 bytes for 4 on/offs
         return data_array
 
-    async def async_set_heat_schedule(self, weekend, sched_array):
+    def set_heat_schedule(self, weekend, sched_array):
         """
         not using the self data array but setting direct to thermo
         NOTE: CAN ONLY USE 30 Minute intervals to program 
@@ -253,9 +254,9 @@ class HeatmiserThermostat(object):
             dcb_addr = WEEKDAY_ADDRW
 
         _LOGGER.info("[RS] set_heat_schedule called with tsatid={}, DCB={}, {}".format(self.tstat_id, dcb_addr, sched_array))
-        await self.uh1_com.async_write_bytes(self.tstat_id, dcb_addr, sched_array)
+        self.uh1_com.write_bytes(self.tstat_id, dcb_addr, sched_array)
 
-    async def async_set_dhw_schedule(self, weekend, sched_array):
+    def set_dhw_schedule(self, weekend, sched_array):
         """
         NOTE:  not using the self data array but setting direct to thermo
         """
@@ -265,26 +266,26 @@ class HeatmiserThermostat(object):
         else:
             dcb_addr = WEEKDAY_DHW_ADDRW
 
-        await self.uh1_com.async_write_bytes(self.tstat_id, dcb_addr, sched_array)
+        self.uh1_com.write_bytes(self.tstat_id, dcb_addr, sched_array)
 
     def get_holiday(self):
         if self.dcb == None:
             return None
-        msb = self.dcb[HOLIDAYLEN_ADDR]>>8
+        msb = self.dcb[HOLIDAYLEN_ADDR]<<8
         lsb = self.dcb[HOLIDAYLEN_ADDR+1]
         return (msb+lsb)
 
-    async def async_set_holiday(self, hours):
+    def set_holiday(self, hours=HOLIDAY_HOURS_MAX):
         """
-        Jam holiday to max 1008 hrs (42 days) (note it swaps to read)  
+        Assume we jam holiday to max 1008 hrs (42 days) (note it swaps to read)  
         """
-        _LOGGER.info("[RS] HeatmiserThermostat set_holiday called")
+        _LOGGER.info("[RS] HeatmiserThermostat set_holiday called with {} hours".format(hours))
 
         lo = hours & 255
         hi = int (hours/256)
         datal = [lo, hi]
-        _LOGGER.info("[RS] Wirting following data bytes {}".format(datal))
-        await self.uh1_com.async_write_bytes(self.tstat_id, HOLIDAYLEN_ADDR, datal)
+        _LOGGER.info("[RS] Setting holiday with following data bytes {}".format(datal))
+        self.uh1_com.write_bytes(self.tstat_id, HOLIDAYLEN_ADDR, datal)
 
 #
 # Believe this is known as CCITT (0xFFFF)
@@ -406,7 +407,7 @@ class UH1_com:
         loop=asyncio.get_running_loop()
         await loop.run_in_executor(None, blocking_serport_close)
 
-    async def async_write_bytes(self, tstat_id, dcb_addr, datal):
+    def write_bytes(self, tstat_id, dcb_addr, datal):
         if(self.serport.is_open==False):
             try:
                 _LOGGER.debug("[RS] Opening serport for write {}".format(self.serport))
@@ -438,8 +439,9 @@ class UH1_com:
         def blocking_serport_close():
             _LOGGER.debug("[RS] Closing serport for write {}".format(self.serport))
             self.serport.close()
-        loop=asyncio.get_running_loop()
-        await loop.run_in_executor(None, blocking_serport_close)
+        #loop=asyncio.get_running_loop()
+        #loop.run_in_executor(None, blocking_serport_close)
+        blocking_serport_close()
         return True
 
     def get_thermostat(self, id_number, room):

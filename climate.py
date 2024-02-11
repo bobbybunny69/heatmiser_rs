@@ -10,7 +10,7 @@
 import logging
 from typing import List
 from datetime import timedelta
-import async_timeout
+#import async_timeout
 
 from . import heatmiserRS as heatmiser 
 import voluptuous as vol
@@ -122,12 +122,12 @@ class HeatmiserRS_Coordinator(DataUpdateCoordinator):
         This is the place to pre-process the data to lookup tables
         so entities can quickly look up their data.
         """
-        async with async_timeout.timeout(10):
+        #async with async_timeout.timeout(10):
             # Grab active context variables to limit data required to be fetched from API
             # Note: using context is not required if there is no need or ability to limit
             # data retrieved from API.
-            _LOGGER.debug("[RS] Coordinator _async_update_data called with ids = {}".format(self.tstats))
-            await self.uh1_con.async_read_dcbs(self.tstats)
+        _LOGGER.debug("[RS] Coordinator _async_update_data called with ids = {}".format(self.tstats))
+        await self.uh1_con.async_read_dcbs(self.tstats)
             
 
 class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
@@ -200,19 +200,25 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
 
     @property
     def preset_mode(self):
-        """Return the current preset status."""
-        return self._preset_mode
+        """Read the holiday hours remaing to determin HOME or AWAY """
+        hours = self.therm.get_holiday()
+        if(hours==HOLIDAY_HOURS_NONE):
+            return PRESET_HOME
+        else:
+            return PRESET_AWAY
         
-    async def async_set_preset_mode(self, preset_mode: str):
+    def set_preset_mode(self, preset_mode: str):
         """Set new preset mode."""
-        _LOGGER.debug("[RS] async_set_preset_mode called with {}".format(preset_mode))
+        _LOGGER.debug("[RS] set_preset_mode called with {}".format(preset_mode))
  
         if preset_mode == PRESET_HOME:
-            await self.therm.async_set_run_mode(HEAT_MODE)
-            await self.therm.async_set_hotwater_state(HW_TIMER)
+            #await self.therm.async_set_run_mode(HEAT_MODE)
+            #await self.therm.async_set_hotwater_state(HW_TIMER)
+            self.therm.set_holiday(HOLIDAY_HOURS_NONE)
         else:
-            await self.therm.async_set_run_mode(AWAY)
-            await self.therm.async_set_hotwater_state(HW_F_OFF)
+            #await self.therm.async_set_run_mode(AWAY)
+            #await self.therm.async_set_hotwater_state(HW_F_OFF)
+            self.therm.set_holiday(HOLIDAY_HOURS_MAX)
         self._preset_mode = preset_mode
         self.async_write_ha_state()
 
@@ -230,10 +236,10 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         """Using set_fan_mode to set hot water status """
         if (fan_mode == FAN_ON):
             _LOGGER.info("[RS] set_fan_mode called FAN_ON")
-            await self.therm.async_set_hotwater_state(HW_F_ON)
+            self.therm.hotwater_state(HW_F_ON)
         else:
             _LOGGER.info("[RS] set_fan_mode called FAN_OFF - setting DHW off")
-            await self.therm.async_set_hotwater_state(HW_F_OFF)
+            self.therm.set_hotwater_state(HW_TIMER)
         self._fan_mode = fan_mode
         self.async_write_ha_state()
 
@@ -252,7 +258,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         """Set new target temperature."""
         temperature = kwargs.get(ATTR_TEMPERATURE)
         self._target_temperature = int(temperature)
-        await self.therm.async_set_target_temp(self._target_temperature)
+        self.therm.set_target_temp(self._target_temperature)
         self.async_write_ha_state()
 
 
@@ -274,17 +280,17 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
             if (int(self.therm.get_heat_status()) == 0)
             else HVAC_MODE_HEAT
         )
-        self._attr_preset_mode = (
+        self._preset_mode = (
             PRESET_HOME
-            if (int(self.therm.get_run_mode()) == HEAT_MODE)
+            if (int(self.therm.get_holiday()) == HOLIDAY_HOURS_NONE)
             else PRESET_AWAY
         )
-        _LOGGER.debug("[RS] Preset mode = {}".format(self._attr_preset_mode))
+        _LOGGER.debug("[RS] Preset mode = {}".format(self._preset_mode))
         self.async_write_ha_state()
 
-    """async def async_update(self):
+    async def async_update(self):
         _LOGGER.info("[RS] async_update called for tstat {}".format(self._id))
-        await self.therm.async_refresh_dcb()
+        self.therm.refresh_dcb()
         self._temperature_unit = TEMP_CELSIUS  ## TODO:  Make it read units and adjust
         self._current_temperature = self.therm.get_room_temp()
         self._target_temperature = self.therm.get_target_temp()
@@ -298,12 +304,12 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
             if (int(self.therm.get_heat_status()) == 0)
             else HVAC_MODE_HEAT
         )
-        self._attr_preset_mode = (
+        self._preset_mode = (
             PRESET_HOME
-            if (int(self.therm.get_run_mode()) == HEAT_MODE)
+            if (int(self.therm.get_holiday()) == HOLIDAY_HOURS_NONE)
             else PRESET_AWAY
         )
-        _LOGGER.debug("[RS] Preset mode = {}".format(self._attr_preset_mode))"""
+        _LOGGER.debug("[RS] Preset mode = {}".format(self._preset_mode))
 
     async def async_set_heat_schedule(self, day, time1, temp1, time2=None, temp2=15, time3=None, temp3=15, time4=None, temp4=15):
         """Handle Set heat schedule service call (hard coded arrays at moment)  NOTE:  Can only program in 30 minute intrevals """
@@ -340,7 +346,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         else:
             weekend = False
         _LOGGER.debug("[RS] Setting heat schedule with Weekend={}, {}".format(weekend, sched))
-        await self.therm.async_set_heat_schedule(weekend, sched)
+        self.therm.set_heat_schedule(weekend, sched)
 
     async def async_set_dhw_schedule(self, day, time1, dur_hrs1, time2, dur_hrs2):
         """Handle Set DHW service call (hard coded arrays at moment)"""
@@ -358,7 +364,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         else:
             weekend = False
         _LOGGER.debug("[RS] Setting DHW schedule with Weekend={}, {}".format(weekend, sched))
-        await self.therm.async_set_dhw_schedule(weekend, sched)
+        self.therm.set_dhw_schedule(weekend, sched)
 
     async def async_set_daytime(self, day, set_time):
         """Handle Set Daytime service call"""
@@ -370,4 +376,4 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         secs =set_time.second
         _LOGGER.debug("[RS] Setting daytime with day={} hour={} mins={} secs={}".format(day, hour, mins, secs))
         day_num = days[day]
-        await self.therm.async_set_daytime(day_num, hour, mins, secs)
+        self.therm.set_daytime(day_num, hour, mins, secs)

@@ -6,6 +6,7 @@ import heatmiserRS as heatmiser
 import time
 import asyncio
 
+from const import *
 """
 Read all thermos and benchmark time taken
 """
@@ -43,7 +44,7 @@ while(True):
         print("Target temp:  ", t.get_target_temp() )
         print("Heat status:  ", t.get_heat_status() )
         print("Run mode (Heat-mode=0, Away=1):  ", t.get_run_mode() )
-        print("Away mode temp:  ", t.get_away_temp() )
+        print("Away fallback temp:  ", t.get_away_temp() )
         print("Holiday mode hours:  ", t.get_holiday() )
         print("Hot-water:  ", t.get_hotwater_status() )
         print("Day (Mon=1, Sun=7)" , t.get_day())
@@ -56,4 +57,39 @@ while(True):
     toc = time.perf_counter()
     print(f"Time taken: {toc - tic:0.4f} seconds")
 
-    time.sleep(3)
+    key = input("[q]uit, [r]epeat, [w]rite command menu")
+    if(key == 'q'):
+        break
+    elif(key== 'w'):
+        key = input("[1] update datetime, [2] hol hours min, [3] hol hours max")
+        
+        if(key == '1'):
+            """ Update datetime """
+            async def async_write_thermo(t):
+                print ("===",t.get_room(),"===")
+                time2set=time.localtime()
+                day=time2set.tm_wday+1
+                hour=time2set.tm_hour
+                mins=time2set.tm_min
+                secs=time2set.tm_sec
+                print("Day:{}, Hour:{}, Mins:{}, Secs:{}".format(day,hour,mins,secs))
+                await t.async_set_daytime(day, hour, mins, secs)
+            for t in HM3_thermos:
+                asyncio.run(async_write_thermo(t))
+        
+        elif(key == '2'):
+            """ Update to set to 0 holiday hours (i.e. home)"""
+            async def async_write_thermo(t):
+                print ("===",t.get_room(),"===")
+                await t.async_set_holiday(HOLIDAY_HOURS_NONE)
+            for t in HM3_thermos:
+                asyncio.run(async_write_thermo(t))
+
+        elif(key == '3'):
+            """ Update to set to max holiday hours (i.e. away)"""
+            async def async_write_thermo(t):
+                print ("===",t.get_room(),"===")
+                await t.async_set_holiday(HOLIDAY_HOURS_MAX)
+            for t in HM3_thermos:
+                asyncio.run(async_write_thermo(t))
+
