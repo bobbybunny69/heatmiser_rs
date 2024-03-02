@@ -236,7 +236,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         """Using set_fan_mode to set hot water status """
         if (fan_mode == FAN_ON):
             _LOGGER.info("[RS] set_fan_mode called FAN_ON")
-            self.therm.hotwater_state(HW_F_ON)
+            self.therm.set_hotwater_state(HW_F_ON)
         else:
             _LOGGER.info("[RS] set_fan_mode called FAN_OFF - setting DHW off")
             self.therm.set_hotwater_state(HW_TIMER)
