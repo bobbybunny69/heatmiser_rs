@@ -92,4 +92,5 @@ while(True):
                 await t.async_set_holiday(HOLIDAY_HOURS_MAX)
             for t in HM3_thermos:
                 asyncio.run(async_write_thermo(t))
-
+    elif(key == 'r'):
+        print("Carrying on...")

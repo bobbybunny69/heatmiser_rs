@@ -207,7 +207,7 @@ class HeatmiserATThermostat(CoordinatorEntity, ClimateEntity):
         else:
             return PRESET_AWAY
         
-    def set_preset_mode(self, preset_mode: str):
+    async def async_set_preset_mode(self, preset_mode: str):
         """Set new preset mode."""
         _LOGGER.debug("[RS] set_preset_mode called with {}".format(preset_mode))
  

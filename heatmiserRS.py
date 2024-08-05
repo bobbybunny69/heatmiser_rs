@@ -439,9 +439,9 @@ class UH1_com:
         def blocking_serport_close():
             _LOGGER.debug("[RS] Closing serport for write {}".format(self.serport))
             self.serport.close()
-        #loop=asyncio.get_running_loop()
-        #loop.run_in_executor(None, blocking_serport_close)
-        blocking_serport_close()
+        loop=asyncio.get_running_loop()
+        loop.run_in_executor(None, blocking_serport_close)
+        #blocking_serport_close()
         return True
 
     def get_thermostat(self, id_number, room):
