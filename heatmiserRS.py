@@ -340,15 +340,15 @@ UH1 connection to the Heatmiser system
 class UH1_com:
     def __init__(self, ipaddress, port):
         _LOGGER.debug("[RS] UH1 __init__ called")
+        self.dcb_dict = {}
+        self.serport = None
         try:
             _LOGGER.debug("[RS] Opening socket to brdige")
             # Opens a non RFC2217 TCP/IP socket for serial
-            serport = serial.serial_for_url("socket://" + ipaddress + ":" + port, timeout=0.5)
+            self.serport = serial.serial_for_url("socket://" + ipaddress + ":" + port, timeout=0.5)
         except serial.serialutil.SerialException as serror:
             _LOGGER.error("[RS] Error opening TCP/IP serial: {}".format(serror))
-        self.serport = serport
         _LOGGER.info("[RS] Serial port conn handle = {}".format(self.serport))
-        self.dcb_dict = {}
 
     async def async_read_dcb(self, tstat_id):
         """ Send command frame to read entire DCB for tstat_id """
