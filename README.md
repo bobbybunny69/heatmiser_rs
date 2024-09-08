@@ -23,9 +23,10 @@ __Note:__   `sensors.py` not used but just in case I want to add later
 * v1:  this was the first attempt using config flow and works well
 * v2:  change logging level to DEBUG now I have it working for majority of messages
 * v3:  move to awaiting async_forward_entry_setups, only open serport at init instead of each access
-* v4:  Added coordinator task and fixed blocking calls issue (by adding add_executor asyncio call for serport.close) 
+* v4:  Added coordinator task and fixed blocking calls issue (by adding add_executor asyncio call for serport.close)
+* v5:  Snapshot of last known working version
+* v6:  Major changes to address async issues, and changes to latest HASS updates 
 
 # ToDo
-- [ ] Cooridnator task not updating set values immediately - find out why and fix
-- [ ] Make the DHW thermostat detection automated (and possibly a sensor)
+- [ ] Make the detection of thermostats automated
 

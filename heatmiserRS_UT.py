@@ -5,6 +5,7 @@
 import heatmiserRS as heatmiser
 import time
 import asyncio
+import logging
 
 from const import *
 """
@@ -21,27 +22,22 @@ WEEKDAY = False
 IP_ADDRESS='192.168.123.253'
 PORT='5000'
 
+logging.basicConfig(level=logging.DEBUG)
+delay=None
 # Set-up port connection to heatmiser system
-uh1 = heatmiser.UH1_com(IP_ADDRESS, PORT)
+uh1 = heatmiser.UH1("socket://" + IP_ADDRESS + ":" + PORT)
 loop = asyncio.get_event_loop()
-
-tstats_conf = [{'id': 1, 'name': 'Kitchen'}, {'id': 2, 'name': 'Boot Room'}, {'id': 3, 'name': 'Living Room'}, {'id': 4, 'name': 'Downstairs'}, {'id': 5, 'name': 'Upstairs'}]
-HM3_thermos = []
-for t in tstats_conf:
-    HM3_thermos.append(heatmiser.HeatmiserThermostat(t.get('id'), t.get('name'), uh1))
-
 """
 Benchmark getting all thermos data 
 """
 while(True):
     tic = time.perf_counter()
     #loop.run_until_complete(uh1.async_open_conn())
-    loop.run_until_complete(uh1.async_read_dcbs(tstats_conf))
+    loop.run_until_complete(uh1.async_open_connection())
+    loop.run_until_complete(uh1.async_read_dcbs())
 
-    for t in HM3_thermos:
-        print ("===",t.get_room(),"===")
-        t.refresh_dcb()
-
+    for t in uh1.thermos:
+        print ("===",t.get_name(),"===")
         print("Room temp:  ", t.get_room_temp() )
         print("Model:  ", t.get_model() )
         print("Target temp:  ", t.get_target_temp() )
@@ -52,48 +48,53 @@ while(True):
         print("Hot-water:  ", t.get_hotwater_status() )
         print("Day (Mon=1, Sun=7)" , t.get_day())
         print("Time" , time.strftime('%H:%M:%S', time.gmtime(t.get_time())))
-        print("Weekday sched: ",t.get_heat_schedule(WEEKDAY))
-        print("Weekend sched: ",t.get_heat_schedule(WEEKEND))
-        print("Weekday DHW sched: ",t.get_dhw_schedule(WEEKDAY))
-        print("Weekend DHW sched: ",t.get_dhw_schedule(WEEKEND))
+        #print("Weekday sched: ",t.get_heat_schedule(WEEKDAY))
+        #print("Weekend sched: ",t.get_heat_schedule(WEEKEND))
+        #print("Weekday DHW sched: ",t.get_dhw_schedule(WEEKDAY))
+        #print("Weekend DHW sched: ",t.get_dhw_schedule(WEEKEND))
 
     toc = time.perf_counter()
     print(f"Time taken: {toc - tic:0.4f} seconds")
+    if delay != None:
+        time.sleep(delay)
+    else:
+        key = input("[q]uit, [t]hrash, [w]rite command menu")
+        if(key == 'q'):
+            break
+        elif(key== 'w'):
+            key = input("[1] update datetime, [2] hol hours min, [3] hol hours max")
+            
+            if(key == '1'):
+                """ Update datetime """
+                async def async_write_thermo(t):
+                    print ("===",t.get_name(),"===")
+                    time2set=time.localtime()
+                    day=time2set.tm_wday+1
+                    hour=time2set.tm_hour
+                    mins=time2set.tm_min
+                    secs=time2set.tm_sec
+                    print("Day:{}, Hour:{}, Mins:{}, Secs:{}".format(day,hour,mins,secs))
+                    await t.set_daytime(day, hour, mins, secs)
+                for t in uh1.thermos:
+                    asyncio.run(async_write_thermo(t))
+            
+            elif(key == '2'):
+                """ Update to set to 0 holiday hours (i.e. home)"""
+                async def async_write_thermo(t):
+                    print ("===",t.get_name(),"===")
+                    await t.async_set_holiday(0)
+                for t in uh1.thermos:
+                    asyncio.run(async_write_thermo(t))
+                    time.sleep(0.3)
 
-    key = input("[q]uit, [r]epeat, [w]rite command menu")
-    if(key == 'q'):
-        break
-    elif(key== 'w'):
-        key = input("[1] update datetime, [2] hol hours min, [3] hol hours max")
-        
-        if(key == '1'):
-            """ Update datetime """
-            async def async_write_thermo(t):
-                print ("===",t.get_room(),"===")
-                time2set=time.localtime()
-                day=time2set.tm_wday+1
-                hour=time2set.tm_hour
-                mins=time2set.tm_min
-                secs=time2set.tm_sec
-                print("Day:{}, Hour:{}, Mins:{}, Secs:{}".format(day,hour,mins,secs))
-                await t.set_daytime(day, hour, mins, secs)
-            for t in HM3_thermos:
-                asyncio.run(async_write_thermo(t))
-        
-        elif(key == '2'):
-            """ Update to set to 0 holiday hours (i.e. home)"""
-            async def async_write_thermo(t):
-                print ("===",t.get_room(),"===")
-                await t.async_set_holiday(HOLIDAY_HOURS_NONE)
-            for t in HM3_thermos:
-                asyncio.run(async_write_thermo(t))
-
-        elif(key == '3'):
-            """ Update to set to max holiday hours (i.e. away)"""
-            async def async_write_thermo(t):
-                print ("===",t.get_room(),"===")
-                await t.async_set_holiday(HOLIDAY_HOURS_MAX)
-            for t in HM3_thermos:
-                asyncio.run(async_write_thermo(t))
-    elif(key == 'r'):
-        print("Carrying on...")
+            elif(key == '3'):
+                """ Update to set to max holiday hours (i.e. away)"""
+                async def async_write_thermo(t):
+                    print ("===",t.get_name(),"===")
+                    await t.async_set_holiday(1008)
+                for t in uh1.thermos:
+                    asyncio.run(async_write_thermo(t))
+                    time.sleep(0.3)
+        elif(key == 't'):
+            key = input("Enter thrash period in seconds...")
+            delay = int(key)        
