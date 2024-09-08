@@ -92,12 +92,12 @@ class UH1:
             _LOGGER.debug("[RS] Serial port already open - skipping")
             return True
         # Using stream reader and writer
-        try:        
+        try:
             self.reader, self.writer = await serial_asyncio.open_serial_connection(url=self.socket)
         except Exception as e:
+            _LOGGER.error("Error opening connection {}".format(e))
             _LOGGER.error(traceback.format_exc())
             return False
-        await asyncio.sleep(0.5)
         _LOGGER.debug("[RS] Opened with reader, writer: ".format(self.reader, self.writer))
         return True
 

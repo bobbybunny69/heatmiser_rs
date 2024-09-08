@@ -45,7 +45,7 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     # This is a simple example to show an error in the UI for a short hostname
     # The exceptions are defined at the end of this file, and are used in the
     # `async_step_user` method below.
-    if len(data["host"]) < 3:
+    if len(data[CONF_HOST]) < 3:
         raise InvalidHost
 
     socket_str = "socket://" + data[CONF_HOST] + ":" + data[CONF_PORT]
@@ -59,7 +59,7 @@ async def validate_input(hass: HomeAssistant, data: dict) -> dict[str, Any]:
         raise CannotConnect
 
     _LOGGER.debug("[RS] config flow validate_input exiting returning: {}".format(data))
-    return {"title": data[CONF_HOST] + ":" + data[CONF_PORT]}
+    return {"title": f"Heatmiser RS - {data[CONF_HOST]}"}
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -87,25 +87,22 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 info = await validate_input(self.hass, user_input)
                 _LOGGER.debug("[RS] await validate input called returning result: {}".format(info))
-            
-                _LOGGER.debug("[RS] setting up entry with title, data: {}, {}".format("Heatmiser RS",user_input))
-                return self.async_create_entry(title="Heatmiser RS", data=user_input)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except InvalidHost:
-                # The error string is set here, and should be translated.
-                # This example does not currently cover translations, see the
-                # comments on `DATA_SCHEMA` for further details.
-                # Set the error on the `host` field, not the entire form.
                 errors["host"] = "cannot_connect"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
 
+            if "base" not in errors:
+                # Validation was successful, so create the config entry
+                _LOGGER.debug("[RS] setting up entry with title, data: {}, {}".format("Heatmiser RS",user_input))
+                return self.async_create_entry(title=info["title"], data=user_input)
+
         # If there is no user input or there were errors, show the form again, including any errors that were found with the input.
         _LOGGER.debug("[RS] If there is no user input or there were errors, show the form again, including any errors")
         return self.async_show_form(step_id="user", data_schema=CONN_SCHEMA, errors=errors)
-
 
 class CannotConnect(exceptions.HomeAssistantError):
     #_LOGGER.debug("[RS] CannotConnect called with: {}".format(exceptions.HomeAssistantError))
