@@ -5,18 +5,18 @@
     Also adds custom services to:
         set heating schedule (only Weekday/Weekend mode supportted)
         set DHW schedule (only Weekday/Weekend mode supportted)
-        set date/time   """
-
+        set date/time 
+"""
 import logging
 from typing import List
 from datetime import timedelta
-#import async_timeout
 
 from . import heatmiserRS as heatmiser 
 import voluptuous as vol
 
 from .const import *
 
+from homeassistant import exceptions
 from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
@@ -52,17 +52,17 @@ from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up the heatmiser thermostat."""
-    conf = entry.data
-    _LOGGER.info("[RS] Climate Entry setup called with Config = {}".format(conf))
+async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
+    """Add heatmiser thermostats for passed config_entry in HA """
+    conf_data = config_entry.data
+    _LOGGER.info("[RS] Climate Entry setup called with Config = {}".format(conf_data))
 
-    uh1 = heatmiser.UH1_com(conf[CONF_HOST], conf[CONF_PORT])
-    heatmiser_v3_thermostat = heatmiser.HeatmiserThermostat
-    thermostats = conf[CONF_THERMOSTATS]
+    uh1 = heatmiser.UH1_com(conf_data[CONF_HOST], conf_data[CONF_PORT])
+    heatmiser_v3_thermo = heatmiser.HeatmiserThermostat
+    thermostats = conf_data[CONF_THERMOSTATS]
  
     #heatmiser_rs_api = hass.data[DOMAIN][entry.entry_id]
-    coordinator = HeatmiserRS_Coordinator(hass, uh1, conf[CONF_THERMOSTATS])
+    coordinator = HeatmiserRS_Coordinator(hass, uh1, thermostats)
     
     # Fetch initial data so we have data when entities subscribe
     #
@@ -76,13 +76,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
     #await coordinator.async_refresh()
     await coordinator.async_config_entry_first_refresh()
 
-    async_add_entities(
-        [
-        HeatmiserATThermostat(coordinator, heatmiser_v3_thermostat, thermostat, uh1)
-        for thermostat in thermostats
-        ],
-        True,
-    )
+    new_devices = []
+    for t in thermostats:
+        new_devices.append(HeatmiserATThermostat(coordinator, heatmiser_v3_thermo, t, uh1))
+    async_add_entities(new_devices)
     
     platform = entity_platform.async_get_current_platform()
     platform.async_register_entity_service(
@@ -115,7 +112,7 @@ class HeatmiserRS_Coordinator(DataUpdateCoordinator):
         )
         self.uh1_con = uh1_con
         self.tstats = thermostats
-       
+
     async def _async_update_data(self):
         """Fetch data from API endpoint.
 

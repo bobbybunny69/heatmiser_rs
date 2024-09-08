@@ -1,5 +1,15 @@
 {
   "config": {
+    "step": {
+      "user": {
+        "title": "Connect to the UH1",
+        "description": "Enter the IP-address/URL and port number of your Heatmiser",
+        "data": {
+          "host": "Host IP",
+          "port": "Port Number"
+          }
+        }
+    },    
     "error": {
       "unknown": "[%key:common::config_flow::error::unknown%]",
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
@@ -7,25 +17,6 @@
     },
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
-    },
-    "step": {
-      "user": {
-        "title": "Connect to the UH1",
-        "description": "Enter the IP address / URL  and port number of your Heatmiser.",
-        "data": {
-          "host": "Host IP",
-          "port": "Port Number"
-          }
-      },    
-      "tstats": {
-        "title": "Add thermostats",
-        "description": "Add your Heatmiser thermostats (usually IDs run 1-8) - HASS should detect which have DHW",
-        "data": {
-          "id": "Thermostat ID",
-          "name": "Friendly Name",
-          "add_another":  "Add another"
-          }
-      }
     }
   }
 }

@@ -2,7 +2,7 @@
   "domain": "heatmiser_rs",
   "name": "Heatmiser RS",
   "config_flow": true,
-  "version": "3.0.0",
+  "version": "5.0.0",
   "documentation": "https://github.com/bobbybunny69/heatmiser_rs",
   "requirements": [],
   "dependencies": [],

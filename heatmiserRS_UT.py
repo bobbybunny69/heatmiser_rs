@@ -23,6 +23,8 @@ PORT='5000'
 
 # Set-up port connection to heatmiser system
 uh1 = heatmiser.UH1_com(IP_ADDRESS, PORT)
+loop = asyncio.get_event_loop()
+
 tstats_conf = [{'id': 1, 'name': 'Kitchen'}, {'id': 2, 'name': 'Boot Room'}, {'id': 3, 'name': 'Living Room'}, {'id': 4, 'name': 'Downstairs'}, {'id': 5, 'name': 'Upstairs'}]
 HM3_thermos = []
 for t in tstats_conf:
@@ -33,7 +35,8 @@ Benchmark getting all thermos data
 """
 while(True):
     tic = time.perf_counter()
-    asyncio.run(uh1.async_read_dcbs(tstats_conf))
+    #loop.run_until_complete(uh1.async_open_conn())
+    loop.run_until_complete(uh1.async_read_dcbs(tstats_conf))
 
     for t in HM3_thermos:
         print ("===",t.get_room(),"===")
@@ -73,7 +76,7 @@ while(True):
                 mins=time2set.tm_min
                 secs=time2set.tm_sec
                 print("Day:{}, Hour:{}, Mins:{}, Secs:{}".format(day,hour,mins,secs))
-                await t.async_set_daytime(day, hour, mins, secs)
+                await t.set_daytime(day, hour, mins, secs)
             for t in HM3_thermos:
                 asyncio.run(async_write_thermo(t))
         

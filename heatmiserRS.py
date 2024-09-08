@@ -2,13 +2,11 @@
 # Rob Saunders 2020
 # Assume Python 3.10.x +
 # My version to do a more atomic reading of the stats
-
-
-import asyncio
-import serial
 import logging
-
-from .const import *
+import time
+import asyncio
+import serial_asyncio_fast as serial_asyncio
+#from .const import *
 
 _LOGGER = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -68,6 +66,133 @@ WEEKEND_ADDRW = 59
 WEEKDAY_DHW_ADDRW = 71
 WEEKEND_DHW_ADDRW = 87
 
+TEMP_HOLD_TIME_SEC = 43200
+HOLIDAY_HOURS_MAX = 1008
+HOLIDAY_HOURS_NONE = 0
+
+"""
+UH1 connection to the Heatmiser system
+"""
+class UH1_com:    
+    def __init__(self, host, port):
+        _LOGGER.debug("[RS] UH1_com __init__ called")
+        self.port = "socket://" + host + ":" + port
+        self.dcb_dict = {}   # this will get emptied and filled as we read DCBs
+        self.transport = None
+        self.protocol = None
+        self.read_buff = []
+    
+    async def async_open_conn(self, buf):
+        class Protocol(asyncio.Protocol):
+            def connection_made(self, transport):
+                self.transport = transport
+                _LOGGER.info("[RS] Port opened")
+
+            def connection_lost(self, exc):
+                _LOGGER.info("[RS] connection_lost callback called")
+                self.transport.loop.stop()
+
+            def data_received(self, data):
+                #_LOGGER.debug("[RS] Read buffer: {}".format(buf))
+                for b in data:
+                    buf.append(b)
+                self.read_buff = buf             
+
+            def pause_reading(self):
+                _LOGGER.debug("[RS] Paused reading tansport: Halting callbacks")
+                self.transport.pause_reading()
+
+            def resume_reading(self):
+                _LOGGER.debug("[RS] Resumed reading tansport: Re-starting callbacks")
+                self.transport.resume_reading()
+
+            def pause_writing(self):
+                _LOGGER.debug("[RS] Pause writing - buffer size {}".format(self.transport.get_write_buffer_size()))
+
+            def resume_writing(self):
+                _LOGGER.debug("[RS] Resume writing - buffer size {}".format(self.transport.get_write_buffer_size()))
+
+        # Opens a non RFC2217 TCP/IP socket for serial
+        _LOGGER.debug("[RS] Opening serial port")        
+        loop = asyncio.get_event_loop()
+        self.transport, self.protocol = await serial_asyncio.create_serial_connection(loop, Protocol, self.port)
+
+    async def async_read_dcbs(self, tstats_conf):
+        """
+        Read all DCBs in one shot via the eth:serial adapter, and store in self array
+        """
+        buf = []
+        _LOGGER.debug("[RS] UH1 refreshing all DCBs data")
+        await self.async_open_conn(buf)
+        _LOGGER.debug("[RS] async_read_dcbs port: transport, protocol = {}, {}".format(self.transport, self.protocol))
+        self.dcb_dict.clear()
+
+        for tstat in tstats_conf:
+            buf.clear()
+            tstat_id = tstat['id']
+            payload = 0  # Since reading - payload is length of bytes to write
+            dcb_addr_lo = 0
+            dcb_addr_hi = 0
+            length_lo = 0xff  # Since reading full DCB
+            length_hi = 0xff
+            msg = [tstat_id, 10+payload, MASTER_ADDR, READ, dcb_addr_lo, dcb_addr_hi, length_lo, length_hi]
+            crc = CRC16()
+            msg = msg + crc.run(msg)
+            string = bytes(msg)
+
+            _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
+            self.transport.write(string)   # Write a string to trigger tsat to send back a DCB (64bytes since in 5/2 mode)
+            await asyncio.sleep(0.3)       # Sleep to have chance to read array with protocol callback function
+
+            crc_r = buf[len(buf)-2 : ]
+            dcb = buf[9:len(buf)-2]
+            _LOGGER.debug("[RS] Buffer = {}".format(buf))
+            _LOGGER.debug("[RS] DCB = {}".format(dcb))
+            _LOGGER.debug("[RS] CRC check Read:Computed = {}:{}".format(crc_r, crc.run(buf[:len(buf)-2])))  
+            """ TODO: Check why CRC not matching  """
+            self.dcb_dict[tstat_id] = dcb
+
+        _LOGGER.debug("[RS] DCB dict = {}".format(self.dcb_dict))
+        _LOGGER.debug("[RS] Closing serial port")        
+        self.transport.close()          # Close the port
+        return True
+
+    async def async_write_bytes(self, tstat_id, dcb_addr, datal):
+        msg = ""        
+        read_buf = []
+        payload = len(datal)  # Since writing - payload is length of bytes to write
+        _LOGGER.debug("[RS] Writing num bytes: {} to tstatid={}, {}".format(payload,tstat_id,datal))
+
+        dcb_addr_lo = dcb_addr & BYTEMASK
+        dcb_addr_hi = (dcb_addr>>8) & BYTEMASK
+        length_lo = payload  # Since reading less than 256 bytes
+        length_hi = 0
+        
+        msg = [tstat_id, 10+payload, MASTER_ADDR, WRITE, dcb_addr_lo, dcb_addr_hi, length_lo, length_hi]
+        msg=msg+datal
+        
+        crc = CRC16()
+        msg = msg + crc.run(msg)
+
+        await self.async_open_conn(read_buf)
+        _LOGGER.debug("[RS] async_write_bytes port: transport, protocol = {}, {}".format(self.transport, self.protocol))
+        self.transport.write(bytes(msg))
+
+        await asyncio.sleep(0.2)    # Allow for readback of data response
+        _LOGGER.debug("[RS] Write response buffer = {}".format(read_buf))
+
+        _LOGGER.debug("[RS] Closing serial port")                
+        self.transport.close()          # Close the port
+
+    def get_thermostat(self, id_number, room):
+        """
+        Get a thermostat object by id number (just used to test connection)
+        :param id_number: The ID of the desired thermostat (1-8 on a single UH1)
+        """
+        return (HeatmiserThermostat(id_number, room, self))
+
+    def __del__(self):
+        _LOGGER.info("[RS] UH1_com __del__ called, nothing to do...")
 
 class HeatmiserThermostat(object):
     """Initialises a heatmiser thermostat, by taking an address and model."""
@@ -82,6 +207,7 @@ class HeatmiserThermostat(object):
     def refresh_dcb(self):
         _LOGGER.debug("[RS] HeatmiserThermostat refresh_dcb called for tstat {}".format(self.tstat_id))
         self.dcb = self.uh1_com.dcb_dict[self.tstat_id]
+        _LOGGER.debug("[RS] DCB contents {}".format(self.dcb))
         _LOGGER.debug("[RS] DCB contents (length): {}   ({})".format(self.dcb,len(self.dcb)))
         self.model = self.dcb[MODEL_ADDR] 
 
@@ -201,14 +327,14 @@ class HeatmiserThermostat(object):
         time+= self.dcb[i+2]
         return time
 
-    def set_daytime(self, day, hour, mins, secs):
+    async def async_set_daytime(self, day, hour, mins, secs):
         """
         Update the day and time NOTE: have to do together as in the same funtion group (see Hetamiser v3 protocol doc)  
         """
         _LOGGER.info("[RS] HeatmiserThermostat set_daytime called with tsatid={}, DD,HH,MM,SS={},{},{},{}".format(self.tstat_id, day,hour,mins,secs))
 
         datal = [day, hour, mins, secs]
-        self.uh1_com.write_bytes(self.tstat_id, DAYTIME_ADDRW, datal)
+        await self.uh1_com.async_write_bytes(self.tstat_id, DAYTIME_ADDRW, datal)
 
     def get_heat_schedule(self, weekend):
         """
@@ -275,7 +401,7 @@ class HeatmiserThermostat(object):
         lsb = self.dcb[HOLIDAYLEN_ADDR+1]
         return (msb+lsb)
 
-    def set_holiday(self, hours=HOLIDAY_HOURS_MAX):
+    async def async_set_holiday(self, hours=HOLIDAY_HOURS_MAX):
         """
         Assume we jam holiday to max 1008 hrs (42 days) (note it swaps to read)  
         """
@@ -285,7 +411,7 @@ class HeatmiserThermostat(object):
         hi = int (hours/256)
         datal = [lo, hi]
         _LOGGER.info("[RS] Setting holiday with following data bytes {}".format(datal))
-        self.uh1_com.write_bytes(self.tstat_id, HOLIDAYLEN_ADDR, datal)
+        await self.uh1_com.async_write_bytes(self.tstat_id, HOLIDAYLEN_ADDR, datal)
 
 #
 # Believe this is known as CCITT (0xFFFF)
@@ -333,120 +459,3 @@ class CRC16:
         for value in message:
             self.update(value)
         return [self.low, self.high]
-
-"""
-UH1 connection to the Heatmiser system
-"""
-class UH1_com:
-    def __init__(self, ipaddress, port):
-        _LOGGER.debug("[RS] UH1 __init__ called")
-        self.dcb_dict = {}
-        self.serport = None
-        try:
-            _LOGGER.debug("[RS] Opening socket to brdige")
-            # Opens a non RFC2217 TCP/IP socket for serial
-            self.serport = serial.serial_for_url("socket://" + ipaddress + ":" + port, timeout=0.5)
-        except serial.serialutil.SerialException as serror:
-            _LOGGER.error("[RS] Error opening TCP/IP serial: {}".format(serror))
-        _LOGGER.info("[RS] Serial port conn handle = {}".format(self.serport))
-
-    async def async_read_dcb(self, tstat_id):
-        """ Send command frame to read entire DCB for tstat_id """
-        payload = 0  # Since reading - payload is length of bytes to write
-        dcb_addr_lo = 0
-        dcb_addr_hi = 0
-        length_lo = 0xff  # Since reading full DCB
-        length_hi = 0xff
-        msg = [tstat_id, 10+payload, MASTER_ADDR, READ, dcb_addr_lo, dcb_addr_hi, length_lo, length_hi]
-        crc = CRC16()
-        msg = msg + crc.run(msg)
-        string = bytes(msg)
-        _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
-        string = bytes(msg)
-        await asyncio.sleep(0.1)   # 100ms delay as was getting read errors (assume write was being missed)
-        self.serport.write(string)   # Write a string to trigger tsat to send back a DCB
-
-        """ Read 9 byte header and get length of DCB """
-        read_bytes=[]
-        HEADER_BYTES=9
-        read_bytes = list(self.serport.read(HEADER_BYTES))
-        _LOGGER.debug("[RS] Header bytes read = {}".format(read_bytes))
-        dcb_bytes = read_bytes[HEADER_BYTES-2]
-        _LOGGER.debug("[RS] Number of bytes in DCB = {}".format(dcb_bytes))
-
-        """ Now we know DCB length, read remnainder (+2 for CRC) """
-        read_bytes = read_bytes + list(self.serport.read(dcb_bytes+2))
-        crc_r = read_bytes[len(read_bytes)-2 : ]
-        del read_bytes[len(read_bytes)-2 : ]   # Remove CRC bytes
-        dcb=read_bytes[9:]
-        _LOGGER.debug("[RS] DCB read = {}".format(dcb))
-        _LOGGER.debug("[RS] CRC check Read:Computed = {}:{}".format(crc_r, crc.run(read_bytes)))  
-        """ TODO: Check why CRC not matching  """
-
-        return(dcb)
-
-    async def async_read_dcbs(self, tstats):
-        if(self.serport.is_open==False):
-            try:
-                _LOGGER.debug("[RS] Opening serport for read dcbs {}".format(self.serport))
-                self.serport.open()
-            except serial.SerialTimeoutException as serror:
-                _LOGGER.error("[RS] Error openinng port: {}".format(serror))
-                return None
-
-        tstat_ids = [ t["id"] for t in tstats ]
-        _LOGGER.debug("[RS] UH1 async_read_dcbs called - for TSTATs {}".format(tstat_ids))
-        for t in tstat_ids:
-            dcb = await self.async_read_dcb(t)
-            if(dcb!=None):
-                self.dcb_dict[t] = dcb
-
-        def blocking_serport_close():
-            _LOGGER.debug("[RS] Closing serport after read dcbs {}".format(self.serport))
-            self.serport.close()
-        loop=asyncio.get_running_loop()
-        await loop.run_in_executor(None, blocking_serport_close)
-
-    def write_bytes(self, tstat_id, dcb_addr, datal):
-        if(self.serport.is_open==False):
-            try:
-                _LOGGER.debug("[RS] Opening serport for write {}".format(self.serport))
-                self.serport.open()
-            except serial.SerialTimeoutException as serror:
-                _LOGGER.error("[RS] Error openinng port: {}".format(serror))
-                return None
-
-        """ Construct and send the command frame """
-        payload = len(datal)  # Since writing - payload is length of bytes to write
-        _LOGGER.debug("[RS] Writing num bytes: {} to tstatid={}, {}".format(payload,tstat_id,datal))
-        dcb_addr_lo = dcb_addr & BYTEMASK
-        dcb_addr_hi = (dcb_addr>>8) & BYTEMASK
-        length_lo = payload  # Since reading less than 256 bytes
-        length_hi = 0
-        msg = [tstat_id, 10+payload, MASTER_ADDR, WRITE, dcb_addr_lo, dcb_addr_hi, length_lo, length_hi]
-        msg=msg+datal
-        crc = CRC16()
-        msg = msg + crc.run(msg)
-        string = bytes(msg)
-        _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
-        self.serport.write(string)   # Write a message (no reply)
-        
-        """ Read reply frame  """
-        REPLY_BYTES=7
-        read_bytes = list(self.serport.read(REPLY_BYTES))
-        _LOGGER.debug("[RS] Response bytes read = {}".format(read_bytes))
-        
-        def blocking_serport_close():
-            _LOGGER.debug("[RS] Closing serport for write {}".format(self.serport))
-            self.serport.close()
-        loop=asyncio.get_running_loop()
-        loop.run_in_executor(None, blocking_serport_close)
-        #blocking_serport_close()
-        return True
-
-    def get_thermostat(self, id_number, room):
-        """
-        Get a thermostat object by id number (just used to test connection)
-        :param id_number: The ID of the desired thermostat (1-8 on a single UH1)
-        """
-        return (HeatmiserThermostat(id_number, room, self))
