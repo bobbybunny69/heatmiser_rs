@@ -163,12 +163,12 @@ class UH1:
         _LOGGER.debug("[RS] reading back 7 bytes with timeout incase no connection")
         response = await self.reader.readexactly(7)    #  Setup read ready to receive the 9 header bytes
         _LOGGER.debug("[RS] Header bytes = {}".format(list(response)))
-        await self.async_update_heat_state(tstat_id)  # In case whatever we did changed heating state
+        await self.async_update_state(tstat_id)  # In case whatever we did changed heating state
         await asyncio.sleep(0.1)       # Added delay as I think I am choking the reader with back2back DCB calls
         return True
 
-    async def async_update_heat_state(self, tstat_id):
-        """ Reading heat status atomically  """ 
+    async def async_update_state(self, tstat_id):
+        """ Reading heat and fan (dhw) status atomically to set dcb bytes for HASS reads """ 
         dcb_addr_lo = HEAT_STATUS_ADDR & BYTEMASK
         dcb_addr_hi = (HEAT_STATUS_ADDR>>8) & BYTEMASK
         length_lo = 1
@@ -183,6 +183,18 @@ class UH1:
         response = await self.reader.readexactly(12)    #  Setup read ready to receive the 9 header bytes
         _LOGGER.debug("[RS] Heating status bytes = {}".format(list(response)))
         self.thermos[tstat_id-1].dcb[HEAT_ADDR] = list(response)[9]  #  Hacky way of setting right DCB byte for heat status
+
+        dcb_addr_lo = DHW_ADDR & BYTEMASK
+        dcb_addr_hi = (DHW_ADDR>>8) & BYTEMASK
+        msg = [tstat_id, 10, MASTER_ADDR, READ, dcb_addr_lo, dcb_addr_hi, length_lo, length_hi]       
+        crc = CRC16()
+        msg = msg + crc.run(msg)
+        _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
+        self.writer.write(bytes(msg))   # Write a string to trigger tsat to send back hotwater status only
+        _LOGGER.debug("[RS] reading back 12 bytes")
+        response = await self.reader.readexactly(12)    #  Setup read ready to receive the 9 header bytes
+        _LOGGER.debug("[RS] Heating status bytes = {}".format(list(response)))
+        self.thermos[tstat_id-1].dcb[DHW_ADDR] = list(response)[9]  #  Hacky way of setting right DCB byte for heat status
         return True
 
 class Thermostat():
@@ -269,7 +281,7 @@ class Thermostat():
     def get_hotwater_status(self):
         if self.dcb == None:
             return False
-        if self.get_model() == PRTHW:
+        if self.dcb[MODEL_ADDR] == PRTHW:
             _LOGGER.debug("[RS] HeatmiserThermostat supports HW - read status")
             return True if self.dcb[DHW_ADDR]==1 else False
         else:
@@ -281,7 +293,7 @@ class Thermostat():
         """
         _LOGGER.info("[RS] HeatmiserThermostat set_hotwater_state called with {}".format(onoff))
 
-        if self.get_model() != PRTHW:
+        if self.dcb[MODEL_ADDR] != PRTHW:
             _LOGGER.error("[RS] Refusing to set hot-water as incorrect thermo model")
         else:
             datal = [onoff]
