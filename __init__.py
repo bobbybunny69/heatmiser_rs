@@ -5,6 +5,7 @@ v2:  change logging level to DEBUG now I have it working for majority of message
 v3:  move to awaiting async_forward_entry_setups, only open serport at init instead of each access
 v4:  Added coordinator task and fixed blocking calls issue (by adding add_executor asyncio call for serport.close) 
 v5:  Working version locked to start improvements
+TODO: Fix the service schemas to use enttity schema (see HA log - HA will depricate in 2025.9)
 """
 from __future__ import annotations
 
@@ -44,6 +45,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # pass socket string so that we can initiailise the connection
     socket_str = "socket://" + entry.data[CONF_HOST] + ":" + entry.data[CONF_PORT]
     coordinator = HMCoordinator(hass, entry, socket_str)
+    
+    # Fetch initial data so we have data when entities subscribe
+    # If the refresh fails, async_config_entry_first_refresh will
+    # raise ConfigEntryNotReady and setup will try again later
+    # If you do not want to retry setup on failure, use
+    # coordinator.async_refresh() instead
     await coordinator.async_config_entry_first_refresh()
 
     # Test to see if api initialised correctly, else raise ConfigNotReady to make HA retry setup
@@ -61,7 +68,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # This creates each HA object for each platform your device requires.
     # It's done by calling the `async_setup_entry` function in each platform module.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    
     return True
 
 async def _async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) -> None:

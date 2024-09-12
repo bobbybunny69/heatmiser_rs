@@ -159,12 +159,12 @@ class UH1:
         msg = msg + crc.run(msg)
         _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
         self.writer.write(bytes(msg))   # Write a string to trigger tsat to send back a DCB (64bytes since in 5/2 mode)
+        await asyncio.sleep(0.1)       # Added delay as I think I am choking the reader with back2back DCB calls
 
         _LOGGER.debug("[RS] reading back 7 bytes with timeout incase no connection")
         response = await self.reader.readexactly(7)    #  Setup read ready to receive the 9 header bytes
         _LOGGER.debug("[RS] Header bytes = {}".format(list(response)))
         await self.async_update_state(tstat_id)  # In case whatever we did changed heating state
-        await asyncio.sleep(0.1)       # Added delay as I think I am choking the reader with back2back DCB calls
         return True
 
     async def async_update_state(self, tstat_id):
@@ -370,6 +370,38 @@ class Thermostat():
         # False if offline.
         return True
 
+    async def async_set_daytime(self, day, hour, mins, secs):
+        """
+        Update the day and time NOTE: have to do together as in the same funtion group (see Hetamiser v3 protocol doc)  
+        """
+        _LOGGER.info("[RS] HeatmiserThermostat set_daytime called with tsatid={}, DD,HH,MM,SS={},{},{},{}".format(self.tstat_id, day,hour,mins,secs))
+        datal = [day, hour, mins, secs]
+        await self.uh1.async_write_bytes(self.tstat_id, DAY_ADDR, datal)
+
+    async def async_set_heat_schedule(self, weekend, sched_array):
+        """
+        Sending direct to thermo
+        NOTE: CAN ONLY USE 30 Minute intervals to program 
+        """
+        _LOGGER.info("[RS] HeatmiserThermostat set_schedule called (Heating)")
+        if (weekend == True):
+            dcb_addr = WEEKEND_ADDR
+        else:
+            dcb_addr = WEEKDAY_ADDR
+        _LOGGER.info("[RS] set_heat_schedule called with tsatid={}, DCB={}, {}".format(self.tstat_id, dcb_addr, sched_array))
+        await self.uh1.async_write_bytes(self.tstat_id, dcb_addr, sched_array)
+
+    async def async_set_dhw_schedule(self, weekend, sched_array):
+        """
+        NOTE:  not using the self data array but setting direct to thermo
+        """
+        _LOGGER.info("[RS] HeatmiserThermostat set_dhw_schedule called (Hot water)")
+        if (weekend == True):
+            dcb_addr = WEEKEND_DHW_ADDR
+        else:
+            dcb_addr = WEEKDAY_DHW_ADDR
+        _LOGGER.info("[RS] set_dhw_schedule called with tsatid={}, DCB={}, {}".format(self.tstat_id, dcb_addr, sched_array))
+        await self.uh1.async_write_bytes(self.tstat_id, dcb_addr, sched_array)
 
 # Believe this is known as CCITT (0xFFFF)
 # This is the CRC function converted directly from the Heatmiser C code

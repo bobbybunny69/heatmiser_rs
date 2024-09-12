@@ -1,9 +1,7 @@
 """Platform for climate integration."""
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import Entity
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.core import callback
 
-from homeassistant.components.climate import PLATFORM_SCHEMA, ClimateEntity
+from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
     ClimateEntityFeature,
     HVACMode,
@@ -11,21 +9,18 @@ from homeassistant.components.climate.const import (
     FAN_OFF,
     PRESET_HOME,
     PRESET_AWAY,
-    ATTR_HVAC_MODE,
-    ATTR_FAN_MODE,
 )
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
     UpdateFailed,
 )
-
+from homeassistant.helpers import entity_platform
 from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
 
 from .heatmiserRS import Thermostat, MIN_TEMP, MAX_TEMP, HOLIDAY_HOURS_MAX, HW_F_ON, HW_F_OFF
-from .const import DOMAIN
+from .const import DOMAIN, SET_DHW_SCHEDULE_SCHEMA, SET_HEAT_SCHEDULE_SCHEMA, SET_DAYTIME_SCHEMA
 from . coordinator import HMCoordinator
-import asyncio
 import logging
 _LOGGER = logging.getLogger(__name__)
 DEFAULT_TEMP = 16
@@ -37,30 +32,38 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
     """Add thermos for passed config_entry in HA."""
     _LOGGER.debug("[RS] climate.py async_setup_entry called with config_entry: {}".format(config_entry))
 
-    coordinator: HMCoordinator = config_entry.runtime_data.coordinator
-    #hub: Hub  = config_entry.runtime_data  # hub object was stored in runtime_data in config flow
-    _LOGGER.debug("coordinator = {}".format(coordinator))
-
     # This gets the data update coordinator from hass.data as specified in your __init__.py
-    #coordinator = HMCoordinator(hass, hub)
-    # Fetch initial data so we have data when entities subscribe
-    # If the refresh fails, async_config_entry_first_refresh will
-    # raise ConfigEntryNotReady and setup will try again later
-    #
-    # If you do not want to retry setup on failure, use
-    # coordinator.async_refresh() instead
-    #await coordinator.async_config_entry_first_refresh()
-    
-    # Enumerate all the sensors in your data value from your DataUpdateCoordinator and add an instance of your sensor class
-    # to a list for each one.
+    coordinator: HMCoordinator = config_entry.runtime_data.coordinator
+    _LOGGER.debug("coordinator = {}".format(coordinator))
+  
+    # Enumerate all the Thermos in your data value from your DataUpdateCoordinator 
+    # and add an instance of HMThermostat class to a list for each one.
     thermos = [
         HMThermostat(coordinator, t)
         for t in coordinator.uh1.thermos
     ]   
-
     # Create the thermostats
     _LOGGER.debug("async_add_entries callback called with {}".format(thermos))
     async_add_entities(thermos)
+
+    # Register the entity service callbacks to set schedules, time, etc
+    platform = entity_platform.async_get_current_platform()
+    platform.async_register_entity_service(
+        "set_dhw_schedule",
+        SET_DHW_SCHEDULE_SCHEMA,
+        "async_set_dhw_schedule",
+    )
+    platform.async_register_entity_service(
+        "set_heat_schedule",
+        SET_HEAT_SCHEDULE_SCHEMA,
+        "async_set_heat_schedule",
+    )
+    platform.async_register_entity_service(
+        "set_daytime",
+        SET_DAYTIME_SCHEMA,
+        "async_set_daytime",
+    )
+
 
 # This class is for the Heatmiser Thermostat
 class HMThermostat(CoordinatorEntity, ClimateEntity):
@@ -72,7 +75,7 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         _LOGGER.debug("HMThermostat __init__ called with coord,thermo {} {}".format(coordinator, thermo))
         """Pass coordinator to CoordinatorEntity."""
         super().__init__(coordinator, context=thermo)
-        self._thermo = thermo
+        self._thermo: Thermostat = thermo
         self._name = self._thermo.name
         self._id = self._thermo._id
         
@@ -204,3 +207,68 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         """Return True if roller and hub is available."""
         _LOGGER.debug("HMThermostat avaiable returning {} and {} ".format(self._thermo.online, self._thermo.uh1.online))
         return self._thermo.online and self._thermo.uh1.online
+
+    async def async_set_daytime(self, day, set_time):
+        """Handle Set Daytime service call"""
+        days = {"mon":1, "tue":2, "wed":3, "thu":4, "fri":5, "sat":5, "sun":7}
+        day = day[0]
+        hour = set_time.hour
+        mins = set_time.minute
+        secs =set_time.second
+        _LOGGER.info("[RS] Set daytime sched with day={} hour={} mins={} secs={}".format(day, hour, mins, secs))
+        day_num = days[day]
+        self._thermo.async_set_daytime(day_num, hour, mins, secs)   # Not working if I await TODO: WHY
+
+    async def async_set_heat_schedule(self, day, time1, temp1, time2=None, temp2=15, time3=None, temp3=15, time4=None, temp4=15):
+        """Handle Set heat schedule service call
+            NOTE:  Can only program in 30 minute intrevals """
+        day = day[0]
+        hour1 = time1.hour
+        mins1 = time1.minute
+        if(time2 == None):
+            hour2 = 24
+            mins2 = 0
+        else:
+            hour2 = time2.hour
+            mins2 = time2.minute
+        if(time3 == None):
+            hour3 = 24
+            mins3 = 0
+        else:
+            hour3 = time3.hour
+            mins3 = time3.minute
+        if(time4 == None):
+            hour4 = 24
+            mins4 = 0
+        else:
+            hour4 = time4.hour
+            mins4 = time4.minute
+        if(mins1 in [0,30] and mins2 in [0,30] and mins3 in [0,30] and mins4 in [0,30]):
+            _LOGGER.debug("[RS] Set heat sched called with valid minute setting")
+        else:
+            _LOGGER.error("[RS] Set heat sched called with a non 30 minute interval")
+        sched = [hour1,mins1, temp1, hour2,mins2, temp2, hour3,mins3, temp3, hour4,mins4, temp4]
+        if day=='sat' or day=='sun':
+            weekend = True
+        else:
+            weekend = False
+        _LOGGER.info("[RS] Set heat sched with Weekend={}, {}".format(weekend, sched))
+        self._thermo.async_set_heat_schedule(weekend, sched)  # Not working if I await TODO: WHY
+
+    async def async_set_dhw_schedule(self, day, time1, dur_hrs1, time2, dur_hrs2):
+        """Handle Set DHW service call (hard coded arrays at moment)"""
+        _LOGGER.debug("[RS] async_set_dhw_schedule called with day={}, wakeup_time, duration={},{}".format(day, time1, dur_hrs1))
+        day = day[0]
+        hr1 = time1.hour
+        mins1 = time1.minute
+        hr2 = time2.hour
+        mins2 = time2.minute
+        sched = [4,0, 4,30, hr1,mins1, hr1+dur_hrs1,mins1, 13,0, 13,30, hr2,mins2, hr2+dur_hrs2,mins2]
+        if day == 'sat':
+            weekend = True
+        elif day == 'sun':
+            weekend = True
+        else:
+            weekend = False
+        _LOGGER.info("[RS] Setting DHW schedule with Weekend={}, {}".format(weekend, sched))
+        self._thermo.async_set_dhw_schedule(weekend, sched)   # Not working if I await TODO: WHY
