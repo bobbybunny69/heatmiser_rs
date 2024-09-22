@@ -15,13 +15,14 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
-from homeassistant.helpers import entity_platform
-from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
+from homeassistant.helpers import entity_platform, service
+from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE, ATTR_ENTITY_ID
 
 from .heatmiserRS import Thermostat, MIN_TEMP, MAX_TEMP, HOLIDAY_HOURS_MAX, HW_F_ON, HW_F_OFF
-from .const import DOMAIN, SET_DHW_SCHEDULE_SCHEMA, SET_HEAT_SCHEDULE_SCHEMA, SET_DAYTIME_SCHEMA
+from .const import DOMAIN, SET_DHW_SCHEDULE_SCHEMA, SET_HEAT_SCHEDULE_SCHEMA, SET_DAYTIME_SCHEMA, SERVICE_SET_DAYTIME
 from . coordinator import HMCoordinator
 import logging
+import asyncio
 _LOGGER = logging.getLogger(__name__)
 DEFAULT_TEMP = 16
 
@@ -43,8 +44,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
         for t in coordinator.uh1.thermos
     ]   
     # Create the thermostats
-    _LOGGER.debug("async_add_entries callback called with {}".format(thermos))
     async_add_entities(thermos)
+    _LOGGER.debug("async_add_entries callback called with {}".format(thermos))
 
     # Register the entity service callbacks to set schedules, time, etc
     platform = entity_platform.async_get_current_platform()
