@@ -48,11 +48,13 @@ while(True):
         print("Hot-water:  ", t.get_hotwater_status() )
         print("Day (Mon=1, Sun=7)" , t.get_day())
         print("Time" , time.strftime('%H:%M:%S', time.gmtime(t.get_time())))
-        #print("Weekday sched: ",t.get_heat_schedule(WEEKDAY))
-        #print("Weekend sched: ",t.get_heat_schedule(WEEKEND))
-        #print("Weekday DHW sched: ",t.get_dhw_schedule(WEEKDAY))
-        #print("Weekend DHW sched: ",t.get_dhw_schedule(WEEKEND))
-
+        print("Weekday sched: ",t.get_heat_schedule(WEEKDAY))
+        print("Weekend sched: ",t.get_heat_schedule(WEEKEND))
+        print("Weekday DHW sched: ",t.get_dhw_schedule(WEEKDAY))
+        print("Weekend DHW sched: ",t.get_dhw_schedule(WEEKEND))
+        print("Online status: ",t.online)
+    
+    print("**HUB status**: ",uh1.online)
     toc = time.perf_counter()
     print(f"Time taken: {toc - tic:0.4f} seconds")
     if delay != None:
@@ -66,7 +68,7 @@ while(True):
             
             if(key == '1'):
                 """ Update datetime """
-                async def async_write_thermo(t):
+                async def async_write_thermo(t: heatmiser.Thermostat):
                     print ("===",t.get_name(),"===")
                     time2set=time.localtime()
                     day=time2set.tm_wday+1
@@ -74,13 +76,13 @@ while(True):
                     mins=time2set.tm_min
                     secs=time2set.tm_sec
                     print("Day:{}, Hour:{}, Mins:{}, Secs:{}".format(day,hour,mins,secs))
-                    await t.set_daytime(day, hour, mins, secs)
+                    await t.async_set_daytime(day, hour, mins, secs)
                 for t in uh1.thermos:
                     asyncio.run(async_write_thermo(t))
             
             elif(key == '2'):
                 """ Update to set to 0 holiday hours (i.e. home)"""
-                async def async_write_thermo(t):
+                async def async_write_thermo(t: heatmiser.Thermostat):
                     print ("===",t.get_name(),"===")
                     await t.async_set_holiday(0)
                 for t in uh1.thermos:
@@ -89,7 +91,7 @@ while(True):
 
             elif(key == '3'):
                 """ Update to set to max holiday hours (i.e. away)"""
-                async def async_write_thermo(t):
+                async def async_write_thermo(t: heatmiser.Thermostat):
                     print ("===",t.get_name(),"===")
                     await t.async_set_holiday(1008)
                 for t in uh1.thermos:

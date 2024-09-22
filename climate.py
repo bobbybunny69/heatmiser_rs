@@ -107,7 +107,7 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        _LOGGER.debug("[RS] uopdating _attr_ feilds for thermo {}".format(self._id))
+        _LOGGER.debug("[RS] _handle_coordinator_update updating _attr_ feilds for thermo {}".format(self._id))
         self._attr_hvac_mode = HVACMode.HEAT if self._thermo.get_heat_status() else HVACMode.OFF
         self._attr_preset_mode = PRESET_AWAY if self._thermo.get_holiday() else PRESET_HOME
         self._attr_fan_mode = FAN_ON if self._thermo.get_hotwater_status() else FAN_OFF
@@ -204,7 +204,7 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
     # If an entity is offline (return False), the UI will refelect this.
     @property
     def available(self) -> bool:
-        """Return True if roller and hub is available."""
+        """Return True if thermo and hub is available."""
         _LOGGER.debug("HMThermostat avaiable returning {} and {} ".format(self._thermo.online, self._thermo.uh1.online))
         return self._thermo.online and self._thermo.uh1.online
 

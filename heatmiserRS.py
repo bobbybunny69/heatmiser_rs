@@ -78,16 +78,20 @@ class UH1:
             Thermostat(self, f"4", f"Downstairs"),
             Thermostat(self, f"5", f"Upstairs"),
         ]
-        self.online = True
+        self.online = False
         self.reader: asyncio.StreamReader = None
         self.writer: asyncio.StreamWriter = None
 
     def __del__(self):
         _LOGGER.info("[RS] UH1_com __del__ called")
-        #self.writer.close()
+        if self.writer == None:
+            return
+        else:
+            _LOGGER.info("[RS] Closing serial stream writer")
+            self.writer.close()
  
     async def async_open_connection(self):
-        _LOGGER.debug("[RS] Opening serial port")
+        _LOGGER.debug("[RS] async_open_connection Opening serial port")
         if(self.reader != None and self.writer != None):
             _LOGGER.debug("[RS] Serial port already open - skipping")
             return True
@@ -97,29 +101,29 @@ class UH1:
         except Exception as e:
             _LOGGER.error("Error opening connection {}".format(e))
             _LOGGER.error(traceback.format_exc())
+            self.online = False
             return False
         _LOGGER.debug("[RS] Opened with reader, writer: ".format(self.reader, self.writer))
+        self.online = True
         return True
-
-    async def async_grab_connection(self):
-        _LOGGER.debug("[RS] Checking for serial port contention")
-        for i in range (20):   # 2 second dealy
-            if(self.socket_grabbed == False):
-                _LOGGER.debug("[RS] Managed to get socket")
-                self.socket_grabbed = True
-                return True
-            await asyncio.sleep(0.1)            
-        _LOGGER.debug("[RS] Failed to get socket")            
-        return False
-        
 
     async def async_read_dcbs(self):
         """
         Read all DCBs in one shot via the eth:serial adapter, and store in thermo dcb array
         """
-        _LOGGER.debug("[RS] UH1 refreshing all DCBs data")
+        _LOGGER.debug("[RS] async_read_dcbs UH1 refreshing all DCBs data")
+        if self.online == False:
+            _LOGGER.info("[RS] Hub offline!!!")
+            if self.writer != None:
+                _LOGGER.info("[RS] Closing connection and trying to reconnect")
+                self.writer.close()
+                await self.writer.wait_closed()
+                self.writer = self.reader = None
+            if await self.async_open_connection() == False:
+                return False
+
         for thermo in self.thermos:
-            return_flag = True
+            self.online = False
             payload = 0  # Since reading - payload is length of bytes to write
             dcb_addr_lo = dcb_addr_hi = 0
             length_lo = length_hi = 0xff  # Since reading full DCB
@@ -127,26 +131,33 @@ class UH1:
             crc = CRC16()
             msg = msg + crc.run(msg)
             _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
-            self.writer.write(bytes(msg))   # Write a string to trigger tsat to send back a DCB (64bytes since in 5/2 mode)
+            self.writer.write(bytes(msg))   # Write a string to trigger tsat to send back a DCB
 
             _LOGGER.debug("[RS] reading back 9 bytes with timeout incase no connection:")
             try:
                 async with async_timeout.timeout(3) as timer:
+                    await self.writer.drain()       
                     header = await self.reader.readexactly(9)    #  Setup read ready to receive the 9 header bytes
                     _LOGGER.debug("[RS] Header bytes = {}".format(list(header)))
             except Exception as e:
-                _LOGGER.warning("Thermo {}:  Error {}".format(thermo._id, e))
-                return_flag = False
+                _LOGGER.error("Thermo {}:  Error {}".format(thermo._id, e))
+                _LOGGER.error(traceback.format_exc())
+                thermo.online = False
                 continue
 
             num_bytes = list(header)[7]            
             bytes_read = await self.reader.readexactly(num_bytes+2)    #  Read DCB + CRC
             thermo.dcb = list(bytes_read)[:-2]
             _LOGGER.debug("[RS] DCB bytes = {}".format(thermo.dcb))
+            thermo.online = self.online = True            
             await asyncio.sleep(0.1)       # Added delay as I think I am choking the reader with back2back DCB calls
-        return return_flag
+        return self.online              #  return status of hub online (True/False)
 
     async def async_write_bytes(self, tstat_id, dcb_addr, datal):
+        if(self.reader == None or self.writer == None):
+            _LOGGER.error("[RS] Serial port not open!")
+            self.online = False
+            return False
         payload = len(datal)  # Since writing - payload is length of bytes to write
         _LOGGER.debug("[RS] Writing {} bytes to tstatid {}: {}".format(payload, tstat_id, datal))
         dcb_addr_lo = dcb_addr & BYTEMASK
@@ -158,44 +169,29 @@ class UH1:
         crc = CRC16()
         msg = msg + crc.run(msg)
         _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
-        self.writer.write(bytes(msg))   # Write a string to trigger tsat to send back a DCB (64bytes since in 5/2 mode)
+        self.writer.write(bytes(msg))   # Write payload to correct thermo
+        _LOGGER.debug("[RS] reading back 7 bytes ACK with timeout incase no connection")
+        try:
+            async with async_timeout.timeout(3) as timer:
+                await self.writer.drain()       
+                response = await self.reader.readexactly(7)    #  Setup read ready to receive the 7 byte ACK package
+                _LOGGER.debug("[RS] Response bytes = {}".format(list(response)))
+        except Exception as e:
+            _LOGGER.error("Thermo {}:  Error {}".format(tstat_id, e))
+            _LOGGER.error(traceback.format_exc())
+            return False
         await asyncio.sleep(0.1)       # Added delay as I think I am choking the reader with back2back DCB calls
-
-        _LOGGER.debug("[RS] reading back 7 bytes with timeout incase no connection")
-        response = await self.reader.readexactly(7)    #  Setup read ready to receive the 9 header bytes
-        _LOGGER.debug("[RS] Header bytes = {}".format(list(response)))
         await self.async_update_state(tstat_id)  # In case whatever we did changed heating state
         return True
 
     async def async_update_state(self, tstat_id):
         """ Reading heat and fan (dhw) status atomically to set dcb bytes for HASS reads """ 
-        dcb_addr_lo = HEAT_STATUS_ADDR & BYTEMASK
-        dcb_addr_hi = (HEAT_STATUS_ADDR>>8) & BYTEMASK
-        length_lo = 1
-        length_hi = 0
-        msg = [tstat_id, 10, MASTER_ADDR, READ, dcb_addr_lo, dcb_addr_hi, length_lo, length_hi]       
-        crc = CRC16()
-        msg = msg + crc.run(msg)
-        _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
-        self.writer.write(bytes(msg))   # Write a string to trigger tsat to send back heating status only
-
-        _LOGGER.debug("[RS] reading back 12 bytes")
-        response = await self.reader.readexactly(12)    #  Setup read ready to receive the 9 header bytes
-        _LOGGER.debug("[RS] Heating status bytes = {}".format(list(response)))
-        self.thermos[tstat_id-1].dcb[HEAT_ADDR] = list(response)[9]  #  Hacky way of setting right DCB byte for heat status
-
-        dcb_addr_lo = DHW_ADDR & BYTEMASK
-        dcb_addr_hi = (DHW_ADDR>>8) & BYTEMASK
-        msg = [tstat_id, 10, MASTER_ADDR, READ, dcb_addr_lo, dcb_addr_hi, length_lo, length_hi]       
-        crc = CRC16()
-        msg = msg + crc.run(msg)
-        _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
-        self.writer.write(bytes(msg))   # Write a string to trigger tsat to send back hotwater status only
-        _LOGGER.debug("[RS] reading back 12 bytes")
-        response = await self.reader.readexactly(12)    #  Setup read ready to receive the 9 header bytes
-        _LOGGER.debug("[RS] Heating status bytes = {}".format(list(response)))
-        self.thermos[tstat_id-1].dcb[DHW_ADDR] = list(response)[9]  #  Hacky way of setting right DCB byte for heat status
-        return True
+        if not self.async_write_bytes(HEAT_STATUS_ADDR, 1):
+            return False
+        elif not self.async_write_bytes(DHW_ADDR, 1):
+            return False
+        else:
+            return True
 
 class Thermostat():
     """Dummy thermostat (device for HA) for Hello World example."""
@@ -205,22 +201,24 @@ class Thermostat():
         self._id = int(tstat_id)
         self.uh1 = uh1
         self.name = name
-        self.dcb = []
-        # Some static information about this device
-        self.firmware_version = f"0.0.{random.randint(1, 9)}"
+        self.dcb = None
+        self.online = False
+        self.model = PRT
 
     def get_tstat_id(self):
-        return self.tstat_id
+        return self._id
     
     def get_name(self):
         return self.name
 
     def get_model(self):
-        return 'PRTHW' if self.dcb[MODEL_ADDR]==PRTHW else 'PRT'
+        if self.online == True:
+            self.model = self.dcb[MODEL_ADDR]
+        return 'PRTHW' if self.model==PRTHW else 'PRT'
 
     def get_target_temp(self):
-        if self.dcb == None:
-            return DUMMY_TEMP
+        if self.online == False:
+            return None
         return self.dcb[TARGET_ADDR]
 
     async def async_set_target_temp(self, temperature: int):
@@ -229,15 +227,15 @@ class Thermostat():
         """
         _LOGGER.info("[RS] HeatmiserThermostat set_target_temp called")
 
-        if 35 < temperature < 5:
+        if MAX_TEMP < temperature < MIN_TEMP:
             _LOGGER.error("[RS] Refusing to set temp outside of allowed range (5-35)")
         else:
             datal = [temperature]
             await self.uh1.async_write_bytes(self._id, TARGET_ADDR, datal)
  
     def get_away_temp(self):
-        if self.dcb == None:
-            return DUMMY_TEMP
+        if self.online == False:
+            return None
         return self.dcb[AWAYTEMP_ADDR]
 
     async def async_set_away_temp(self, temperature):
@@ -253,12 +251,39 @@ class Thermostat():
             self.uh1.async_write_bytes(self._id, AWAYTEMP_ADDR, datal)
  
     def get_heat_status(self) -> bool:
-        if self.dcb == None:
+        if self.online == False:
             return False
         return True if self.dcb[HEAT_ADDR]==1 else False
 
+    def get_hotwater_status(self):
+        if self.online == False:
+            return False
+        if self.dcb[MODEL_ADDR] == PRTHW:
+            _LOGGER.debug("[RS] HeatmiserThermostat supports HW - read status")
+            return True if self.dcb[DHW_ADDR]==1 else False
+        else:
+            return False
+
+    def get_holiday(self):
+        if self.online == False:
+            return None
+        msb = self.dcb[HOLIDAYLEN_ADDR]<<8
+        lsb = self.dcb[HOLIDAYLEN_ADDR+1]
+        return False if lsb+msb == 0 else True
+
+    async def async_set_holiday(self, hours=HOLIDAY_HOURS_MAX):
+        """
+        Assume we jam holiday to max 1008 hrs (42 days) (note it swaps to read)  
+        """
+        _LOGGER.info("[RS] HeatmiserThermostat set_holiday called with {} hours".format(hours))
+        lo = hours & 255
+        hi = int (hours/256)
+        datal = [lo, hi]
+        _LOGGER.info("[RS] Setting holiday with following data bytes {}".format(datal))
+        await self.uh1.async_write_bytes(self._id, HOLIDAYLEN_ADDR, datal)
+
     def get_run_mode(self):
-        if self.dcb == None:
+        if self.online == False:
             return HEAT_MODE
         return self.dcb[RUNMODE_ADDR]
 
@@ -272,111 +297,19 @@ class Thermostat():
         await self.uh1.async_write_bytes(self._id, RUNMODE_ADDR, datal)
         
     def get_room_temp(self):
-        if self.dcb == None:
-            return DUMMY_TEMP
+        if self.online == False:
+            return None
         msb = self.dcb[ROOMTEMP_ADDR]<<8
         lsb = self.dcb[ROOMTEMP_ADDR+1]
         return ((msb+lsb)/10)
 
-    def get_hotwater_status(self):
-        if self.dcb == None:
-            return False
-        if self.dcb[MODEL_ADDR] == PRTHW:
-            _LOGGER.debug("[RS] HeatmiserThermostat supports HW - read status")
-            return True if self.dcb[DHW_ADDR]==1 else False
-        else:
-            return False
-
-    async def async_set_hotwater(self, onoff):
-        """
-        Sets the HW state - NOTE:  0=TIMER,  ON=1,  FORCE OFF=2
-        """
-        _LOGGER.info("[RS] HeatmiserThermostat set_hotwater_state called with {}".format(onoff))
-
-        if self.dcb[MODEL_ADDR] != PRTHW:
-            _LOGGER.error("[RS] Refusing to set hot-water as incorrect thermo model")
-        else:
-            datal = [onoff]
-            await self.uh1.async_write_bytes(self._id, DHW_ADDRW, datal)
-
-    def get_day(self):
-        if self.dcb == None:
-            return None
-        if self.get_model() == PRTHW:
-            return self.dcb[DAY_ADDR+1]
-        else:
-            return self.dcb[DAY_ADDR]
-
-    def get_time(self):
-        if self.dcb == None:
-            return None
-        if self.get_model() == PRTHW:
-            i=TIME_ADDR+1
-        else:
-            i=TIME_ADDR
-        time = self.dcb[i]*3600 
-        time+= self.dcb[i+1]*60
-        time+= self.dcb[i+2]
-        return time
-
     async def async_set_daytime(self, day, hour, mins, secs):
         """
         Update the day and time NOTE: have to do together as in the same funtion group (see Hetamiser v3 protocol doc)  
         """
-        _LOGGER.info("[RS] HeatmiserThermostat set_daytime called with tsatid={}, DD,HH,MM,SS={},{},{},{}".format(self.tstat_id, day,hour,mins,secs))
+        _LOGGER.info("[RS] HeatmiserThermostat set_daytime called with tsatid={}, DD,HH,MM,SS={},{},{},{}".format(self._id, day,hour,mins,secs))
         datal = [day, hour, mins, secs]
-        await self.uh1.async_write_bytes(self._id, DAYTIME_ADDRW, datal)
-
-    def get_holiday(self):
-        if self.dcb == None:
-            return None
-        msb = self.dcb[HOLIDAYLEN_ADDR]<<8
-        lsb = self.dcb[HOLIDAYLEN_ADDR+1]
-        return False if lsb+msb == 0 else True
-        
-    async def async_set_holiday(self, hours=HOLIDAY_HOURS_MAX):
-        """
-        Assume we jam holiday to max 1008 hrs (42 days) (note it swaps to read)  
-        """
-        _LOGGER.info("[RS] HeatmiserThermostat set_holiday called with {} hours".format(hours))
-
-        lo = hours & 255
-        hi = int (hours/256)
-        datal = [lo, hi]
-        _LOGGER.info("[RS] Setting holiday with following data bytes {}".format(datal))
-        await self.uh1.async_write_bytes(self._id, HOLIDAYLEN_ADDR, datal)
-
-    @property
-    def tstat_id(self) -> str:
-        """Return ID for roller."""
-        return self._id
-
-    @property
-    def current_temperature(self) -> float:
-        """Dummy temeperature generation"""
-        _LOGGER.debug("[RS] Thermostat random temp ~12")
-        return round(random.random() * 3 + 10, 2)
-
-    @property
-    def target_temperature(self) -> float:
-        """Return ID for roller."""
-        _LOGGER.debug("[RS] Thermostat random set temp ~12")
-        return random.randint(16, 27)
-
-    @property
-    def online(self) -> float:
-        """Thermostat is online."""
-        # The dummy thermo is offline about 10% of the time. Returns True if online,
-        # False if offline.
-        return True
-
-    async def async_set_daytime(self, day, hour, mins, secs):
-        """
-        Update the day and time NOTE: have to do together as in the same funtion group (see Hetamiser v3 protocol doc)  
-        """
-        _LOGGER.info("[RS] HeatmiserThermostat set_daytime called with tsatid={}, DD,HH,MM,SS={},{},{},{}".format(self.tstat_id, day,hour,mins,secs))
-        datal = [day, hour, mins, secs]
-        await self.uh1.async_write_bytes(self.tstat_id, DAY_ADDR, datal)
+        await self.uh1.async_write_bytes(self._id, DAY_ADDR, datal)
 
     async def async_set_heat_schedule(self, weekend, sched_array):
         """
@@ -388,8 +321,8 @@ class Thermostat():
             dcb_addr = WEEKEND_ADDR
         else:
             dcb_addr = WEEKDAY_ADDR
-        _LOGGER.info("[RS] set_heat_schedule called with tsatid={}, DCB={}, {}".format(self.tstat_id, dcb_addr, sched_array))
-        await self.uh1.async_write_bytes(self.tstat_id, dcb_addr, sched_array)
+        _LOGGER.info("[RS] set_heat_schedule called with tsatid={}, DCB={}, {}".format(self._id, dcb_addr, sched_array))
+        await self.uh1.async_write_bytes(self._id, dcb_addr, sched_array)
 
     async def async_set_dhw_schedule(self, weekend, sched_array):
         """
@@ -400,8 +333,55 @@ class Thermostat():
             dcb_addr = WEEKEND_DHW_ADDR
         else:
             dcb_addr = WEEKDAY_DHW_ADDR
-        _LOGGER.info("[RS] set_dhw_schedule called with tsatid={}, DCB={}, {}".format(self.tstat_id, dcb_addr, sched_array))
-        await self.uh1.async_write_bytes(self.tstat_id, dcb_addr, sched_array)
+        _LOGGER.info("[RS] set_dhw_schedule called with tsatid={}, DCB={}, {}".format(self._id, dcb_addr, sched_array))
+        await self.uh1.async_write_bytes(self._id, dcb_addr, sched_array)
+
+    def get_day(self):
+        if self.online == False:
+            return None
+        if self.get_model() == 'PRTHW':
+            return self.dcb[DAY_ADDR+1]
+        else:
+            return self.dcb[DAY_ADDR]
+
+    def get_time(self):
+        if self.online == False:
+            return None
+        if self.get_model() == 'PRTHW':
+            i=TIME_ADDR+1
+        else:
+            i=TIME_ADDR
+        time = self.dcb[i]*3600 
+        time+= self.dcb[i+1]*60
+        time+= self.dcb[i+2]
+        return time
+
+    def get_heat_schedule(self, weekend):
+        if self.online == False:
+            return None
+        if (weekend == True):
+            dcb_addr = WEEKEND_ADDR
+        else:
+            dcb_addr = WEEKDAY_ADDR
+        if self.get_model() == 'PRTHW':
+            dcb_addr += 1
+        data_array = self.dcb[dcb_addr : dcb_addr+12] #read 12 bytes
+        return data_array
+
+    def get_dhw_schedule(self, weekend):
+        if self.online == False:
+            return None
+        if self.get_model() == 'PRTHW':
+            _LOGGER.debug("[RS] HeatmiserThermostat support HW - read status")
+            if (weekend == True):
+                dcb_addr = WEEKEND_DHW_ADDR
+            else:
+                dcb_addr = WEEKDAY_DHW_ADDR
+            data_array = self.dcb[dcb_addr : dcb_addr+16]   #read 16 bytes for 4 on/offs
+            return data_array
+        else:
+            _LOGGER.error("[RS] Trying to get DHW schedule from non PRTHW model")
+            return False
 
 # Believe this is known as CCITT (0xFFFF)
 # This is the CRC function converted directly from the Heatmiser C code
