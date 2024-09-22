@@ -187,10 +187,10 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         """Information about this entity/device."""
         _LOGGER.debug("[RS] device info called")
         return {
-            "identifiers": {(DOMAIN, self._thermo.tstat_id)},
+            "identifiers": {(DOMAIN, self._thermo._id)},
             # If desired, the name for the device could be different to the entity
             "name": self._thermo.name,
-            "sw_version": self._thermo.firmware_version,
+            "sw_version": self._thermo.fw_version,
             "model": self._thermo.get_model(),
             "manufacturer": self._thermo.uh1.manufacturer
         }

@@ -5,6 +5,7 @@ v2:  change logging level to DEBUG now I have it working for majority of message
 v3:  move to awaiting async_forward_entry_setups, only open serport at init instead of each access
 v4:  Added coordinator task and fixed blocking calls issue (by adding add_executor asyncio call for serport.close) 
 v5:  Working version locked to start improvements
+v6:  Various imporvements to robustness and fully async
 TODO: Fix the service schemas to use enttity schema (see HA log - HA will depricate in 2025.9)
 """
 from __future__ import annotations

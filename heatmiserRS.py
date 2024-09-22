@@ -153,45 +153,56 @@ class UH1:
             await asyncio.sleep(0.1)       # Added delay as I think I am choking the reader with back2back DCB calls
         return self.online              #  return status of hub online (True/False)
 
-    async def async_write_bytes(self, tstat_id, dcb_addr, datal):
+    async def async_write_serial(self, tstat_id, dcb_addr, datal=[]):
+        """ if datal empty used for reading back a single byte """
         if(self.reader == None or self.writer == None):
             _LOGGER.error("[RS] Serial port not open!")
             self.online = False
             return False
         payload = len(datal)  # Since writing - payload is length of bytes to write
-        _LOGGER.debug("[RS] Writing {} bytes to tstatid {}: {}".format(payload, tstat_id, datal))
+        if payload == 0:
+            _LOGGER.debug("[RS] Retrieving single byte from Tstat: DCB addr {}: {}".format(tstat_id, dcb_addr))    
+            rw = READ
+            readback = 12
+            length_lo = 1
+        else:
+            _LOGGER.debug("[RS] Writing {} bytes to tstatid {}: {}".format(payload, tstat_id, datal))
+            rw = WRITE
+            readback = 7
+            length_lo = payload
         dcb_addr_lo = dcb_addr & BYTEMASK
         dcb_addr_hi = (dcb_addr>>8) & BYTEMASK
-        length_lo = payload  # Since reading less than 256 bytes
-        length_hi = 0
-        msg = [tstat_id, 10+payload, MASTER_ADDR, WRITE, dcb_addr_lo, dcb_addr_hi, length_lo, length_hi]
+        length_hi = 0       # since reading back less than 256 bytes
+        msg = [tstat_id, 10+payload, MASTER_ADDR, rw, dcb_addr_lo, dcb_addr_hi, length_lo, length_hi]
         msg=msg+datal        
         crc = CRC16()
         msg = msg + crc.run(msg)
         _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
         self.writer.write(bytes(msg))   # Write payload to correct thermo
-        _LOGGER.debug("[RS] reading back 7 bytes ACK with timeout incase no connection")
+        _LOGGER.debug("[RS] reading back {} bytes with timeout incase no connection".format(readback))
         try:
             async with async_timeout.timeout(3) as timer:
                 await self.writer.drain()       
-                response = await self.reader.readexactly(7)    #  Setup read ready to receive the 7 byte ACK package
+                response = await self.reader.readexactly(readback)    #  Setup read ready to receive the 7 byte ACK package
                 _LOGGER.debug("[RS] Response bytes = {}".format(list(response)))
         except Exception as e:
             _LOGGER.error("Thermo {}:  Error {}".format(tstat_id, e))
             _LOGGER.error(traceback.format_exc())
             return False
+        if rw == READ:
+                self.thermos[tstat_id-1].dcb[dcb_addr] = list(response)[9]  #  Hacky way of setting right DCB byte for heat status
         await asyncio.sleep(0.1)       # Added delay as I think I am choking the reader with back2back DCB calls
-        await self.async_update_state(tstat_id)  # In case whatever we did changed heating state
         return True
 
-    async def async_update_state(self, tstat_id):
-        """ Reading heat and fan (dhw) status atomically to set dcb bytes for HASS reads """ 
-        if not self.async_write_bytes(HEAT_STATUS_ADDR, 1):
-            return False
-        elif not self.async_write_bytes(DHW_ADDR, 1):
-            return False
-        else:
-            return True
+    async def async_write_bytes(self, tstat_id, dcb_addr, datal=[]):
+        if await self.async_write_serial(tstat_id, dcb_addr, datal):
+            if not await self.async_write_serial(tstat_id, HEAT_ADDR):
+                return False
+            elif not await self.async_write_serial(tstat_id, DHW_ADDR):
+                return False
+            else:
+                return True
+        return False
 
 class Thermostat():
     """Dummy thermostat (device for HA) for Hello World example."""
@@ -204,6 +215,7 @@ class Thermostat():
         self.dcb = None
         self.online = False
         self.model = PRT
+        self.fw_version = 'v6.x.y.x'
 
     def get_tstat_id(self):
         return self._id
@@ -263,6 +275,18 @@ class Thermostat():
             return True if self.dcb[DHW_ADDR]==1 else False
         else:
             return False
+
+    async def async_set_hotwater(self, onoff):
+        """
+        Sets the HW state - NOTE:  0=TIMER,  ON=1,  FORCE OFF=2
+        """
+        _LOGGER.info("[RS] HeatmiserThermostat set_hotwater_state called with {}".format(onoff))
+
+        if self.dcb[MODEL_ADDR] != PRTHW:
+            _LOGGER.error("[RS] Refusing to set hot-water as incorrect thermo model")
+        else:
+            datal = [onoff]
+            await self.uh1.async_write_bytes(self._id, DHW_ADDRW, datal)
 
     def get_holiday(self):
         if self.online == False:
