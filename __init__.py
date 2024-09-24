@@ -7,6 +7,8 @@ v4:  Added coordinator task and fixed blocking calls issue (by adding add_execut
 v5:  Working version locked to start improvements
 v6:  Various imporvements to robustness and fully async
 TODO: Fix the service schemas to use enttity schema (see HA log - HA will depricate in 2025.9)
+TODO: Workout why occasional errors reading thermos (delays needed?)
+TODO: Work out why awaiting async programming results in errors
 """
 from __future__ import annotations
 

@@ -19,7 +19,7 @@ from homeassistant.helpers import entity_platform, service
 from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE, ATTR_ENTITY_ID
 
 from .heatmiserRS import Thermostat, MIN_TEMP, MAX_TEMP, HOLIDAY_HOURS_MAX, HW_F_ON, HW_F_OFF
-from .const import DOMAIN, SET_DHW_SCHEDULE_SCHEMA, SET_HEAT_SCHEDULE_SCHEMA, SET_DAYTIME_SCHEMA, SERVICE_SET_DAYTIME
+from .const import DOMAIN, SET_DHW_SCHEDULE_SCHEMA, SET_HEAT_SCHEDULE_SCHEMA, SET_DAYTIME_SCHEMA
 from . coordinator import HMCoordinator
 import logging
 import asyncio
@@ -221,27 +221,19 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         self._thermo.async_set_daytime(day_num, hour, mins, secs)   # Not working if I await TODO: WHY
 
     async def async_set_heat_schedule(self, day, time1, temp1, time2=None, temp2=15, time3=None, temp3=15, time4=None, temp4=15):
-        """Handle Set heat schedule service call
-            NOTE:  Can only program in 30 minute intrevals """
+        """Handle Set heat schedule service call  NOTE: Can only program in 30 minute intrevals """
         day = day[0]
         hour1 = time1.hour
         mins1 = time1.minute
-        if(time2 == None):
-            hour2 = 24
-            mins2 = 0
-        else:
+        hour2 = hour3 = hour4 = 24
+        mins2 = mins3 = mins4 = 0
+        if(time2 != None):
             hour2 = time2.hour
             mins2 = time2.minute
-        if(time3 == None):
-            hour3 = 24
-            mins3 = 0
-        else:
+        if(time3 != None):
             hour3 = time3.hour
             mins3 = time3.minute
-        if(time4 == None):
-            hour4 = 24
-            mins4 = 0
-        else:
+        if(time4 != None):
             hour4 = time4.hour
             mins4 = time4.minute
         if(mins1 in [0,30] and mins2 in [0,30] and mins3 in [0,30] and mins4 in [0,30]):
