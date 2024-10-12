@@ -22,18 +22,20 @@ WEEKDAY = False
 IP_ADDRESS='192.168.123.253'
 PORT='5000'
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logging.DEBUG)
 delay=None
 # Set-up port connection to heatmiser system
 uh1 = heatmiser.UH1("socket://" + IP_ADDRESS + ":" + PORT)
 loop = asyncio.get_event_loop()
+if not loop.run_until_complete(uh1.async_open_connection()):
+    print("Connection failed...  do retry action")
+    exit(1)
+
 """
 Benchmark getting all thermos data 
 """
 while(True):
     tic = time.perf_counter()
-    #loop.run_until_complete(uh1.async_open_conn())
-    loop.run_until_complete(uh1.async_open_connection())
     loop.run_until_complete(uh1.async_read_dcbs())
 
     for t in uh1.thermos:

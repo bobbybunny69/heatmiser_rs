@@ -69,7 +69,6 @@ class UH1:
         """Init dummy hub."""
         _LOGGER.debug("[RS] UH1 __init__ called with socket: {}".format(socket))
         self.socket = socket
-        self.socket_grabbed = False 
         self.id = socket.lower()
         self.thermos = [
             Thermostat(self, f"1", f"Kitchen", PRTHW),
@@ -136,7 +135,6 @@ class UH1:
             _LOGGER.debug("[RS] reading back 9 bytes with timeout incase no connection:")
             try:
                 async with async_timeout.timeout(3) as timer:
-                    await self.writer.drain()       
                     header = await self.reader.readexactly(9)    #  Setup read ready to receive the 9 header bytes
                     _LOGGER.debug("[RS] Header bytes = {}".format(list(header)))
             except Exception as e:
@@ -150,7 +148,7 @@ class UH1:
             thermo.dcb = list(bytes_read)[:-2]
             _LOGGER.debug("[RS] DCB bytes = {}".format(thermo.dcb))
             thermo.online = self.online = True            
-            await asyncio.sleep(0.1)       # Added delay as I think I am choking the reader with back2back DCB calls
+            await asyncio.sleep(0.2)    # Added delay as I think I am choking the reader with back2back DCB calls
         return self.online              #  return status of hub online (True/False)
 
     async def async_write_serial(self, tstat_id, dcb_addr, datal=[]):

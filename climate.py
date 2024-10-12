@@ -25,6 +25,7 @@ import logging
 import asyncio
 _LOGGER = logging.getLogger(__name__)
 DEFAULT_TEMP = 16
+CONN_RETRIES = 3
 
 # Each thermostat climate are added at
 # the same time to the same list. This way only a single async_add_devices call is
@@ -79,6 +80,7 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         self._thermo: Thermostat = thermo
         self._name = self._thermo.name
         self._id = self._thermo._id
+        self._count_retries = 0
         
         self._attr_unique_id = "hmrsthermo_" + str(self._id)
         self._attr_name = self._thermo.name
@@ -205,9 +207,16 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
     # If an entity is offline (return False), the UI will refelect this.
     @property
     def available(self) -> bool:
-        """Return True if thermo and hub is available."""
-        _LOGGER.debug("HMThermostat avaiable returning {} and {} ".format(self._thermo.online, self._thermo.uh1.online))
-        return self._thermo.online and self._thermo.uh1.online
+        """Return False if thermo is not available for thre retries """
+        _LOGGER.debug("HMThermostat avaiable called: Thermo online = {}, count = {} ".format(self._thermo.online, self._count_retries))
+        if self._thermo.online:
+            self._count_retries = 0
+        else:
+            self._count_retries +=1
+            if self._count_retries >= 3:
+                _LOGGER.debug("HMThermostat {} failed 3 attemps so offline".format(self._thermo._id))
+                return False 
+        return True
 
     async def async_set_daytime(self, day, set_time):
         """Handle Set Daytime service call"""
