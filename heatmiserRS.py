@@ -181,7 +181,6 @@ class UH1:
         try:
             async with async_timeout.timeout(3) as timer:
                 await self.writer.drain()
-                await asyncio.sleep(0.1)       
                 response = await self.reader.readexactly(readback)    #  Setup read ready to receive the 7 byte ACK package
                 _LOGGER.debug("[RS] Response bytes = {}".format(list(response)))
         except Exception as e:
