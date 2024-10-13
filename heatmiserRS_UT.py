@@ -80,8 +80,7 @@ while(True):
                     print("Day:{}, Hour:{}, Mins:{}, Secs:{}".format(day,hour,mins,secs))
                     await t.async_set_daytime(day, hour, mins, secs)
                 for t in uh1.thermos:
-                    asyncio.run(async_write_thermo(t))
-            
+                    loop.run_until_complete(async_write_thermo(t))
             elif(key == '2'):
                 """ Update to set to 0 holiday hours (i.e. home)"""
                 async def async_write_thermo(t: heatmiser.Thermostat):

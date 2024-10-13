@@ -180,7 +180,8 @@ class UH1:
         _LOGGER.debug("[RS] reading back {} bytes with timeout incase no connection".format(readback))
         try:
             async with async_timeout.timeout(3) as timer:
-                await self.writer.drain()       
+                await self.writer.drain()
+                await asyncio.sleep(0.1)       
                 response = await self.reader.readexactly(readback)    #  Setup read ready to receive the 7 byte ACK package
                 _LOGGER.debug("[RS] Response bytes = {}".format(list(response)))
         except Exception as e:
@@ -331,7 +332,7 @@ class Thermostat():
         """
         _LOGGER.info("[RS] HeatmiserThermostat set_daytime called with tsatid={}, DD,HH,MM,SS={},{},{},{}".format(self._id, day,hour,mins,secs))
         datal = [day, hour, mins, secs]
-        await self.uh1.async_write_bytes(self._id, DAY_ADDR, datal)
+        await self.uh1.async_write_bytes(self._id, DAYTIME_ADDRW, datal)
 
     async def async_set_heat_schedule(self, weekend, sched_array):
         """
