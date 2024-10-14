@@ -21,8 +21,7 @@ ATTR_TEMPERATURE_2 = "temp2"
 ATTR_TEMPERATURE_3 = "temp3" 
 ATTR_TEMPERATURE_4 = "temp4" 
 
-SET_DHW_SCHEDULE_SCHEMA = vol.Schema(
-    {
+SET_DHW_SCHEDULE_SCHEMA = {
         vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Required(ATTR_DAY): cv.weekdays,
         vol.Required(ATTR_TIME_1): cv.time,
@@ -30,9 +29,7 @@ SET_DHW_SCHEDULE_SCHEMA = vol.Schema(
         vol.Required(ATTR_TIME_2): cv.time,
         vol.Required(ATTR_DUR_HRS2): cv.positive_int,
     }
-)
-SET_HEAT_SCHEDULE_SCHEMA = vol.Schema(
-    {
+SET_HEAT_SCHEDULE_SCHEMA = {
         vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Required(ATTR_DAY): cv.weekdays,
         vol.Required(ATTR_TIME_1): cv.time,
@@ -44,11 +41,10 @@ SET_HEAT_SCHEDULE_SCHEMA = vol.Schema(
         vol.Optional(ATTR_TIME_4): cv.time,
         vol.Optional(ATTR_TEMPERATURE_4): cv.positive_int,
     }
-)
-SET_DAYTIME_SCHEMA = vol.Schema(
-    {
+
+SET_DAYTIME_SCHEMA = {
         vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Required(ATTR_DAY): cv.weekdays,
         vol.Required(ATTR_SET_TIME): cv.time,
     }
-)
+
