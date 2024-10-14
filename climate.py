@@ -208,7 +208,6 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
     @property
     def available(self) -> bool:
         """Return False if thermo is not available for thre retries """
-        _LOGGER.debug("HMThermostat avaiable called: Thermo online = {}, count = {} ".format(self._thermo.online, self._count_retries))
         if self._thermo.online:
             self._count_retries = 0
         else:
@@ -216,6 +215,7 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
             if self._count_retries >= 3:
                 _LOGGER.debug("HMThermostat {} failed 3 attemps so offline".format(self._thermo._id))
                 return False 
+        _LOGGER.debug("HMThermostat avaiable: Thermo online = {}, count = {} ".format(self._thermo.online, self._count_retries))
         return True
 
     async def async_set_daytime(self, day, set_time):
