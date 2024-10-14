@@ -6,6 +6,7 @@ v3:  move to awaiting async_forward_entry_setups, only open serport at init inst
 v4:  Added coordinator task and fixed blocking calls issue (by adding add_executor asyncio call for serport.close) 
 v5:  Working version locked to start improvements
 v6:  Various imporvements to robustness and fully async
+v7:  Wrapped port open/close around read/writes to improve connectivty reliability
 TODO: Fix the service schemas to use enttity schema (see HA log - HA will depricate in 2025.9)
 TODO: Workout why occasional errors reading thermos (delays needed?)
 TODO: Work out why awaiting async programming results in errors

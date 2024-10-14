@@ -27,9 +27,9 @@ delay=None
 # Set-up port connection to heatmiser system
 uh1 = heatmiser.UH1("socket://" + IP_ADDRESS + ":" + PORT)
 loop = asyncio.get_event_loop()
-if not loop.run_until_complete(uh1.async_open_connection()):
-    print("Connection failed...  do retry action")
-    exit(1)
+#if not loop.run_until_complete(uh1.async_open_connection()):
+#    print("Connection failed...  do retry action")
+#    exit(1)
 
 """
 Benchmark getting all thermos data 
@@ -79,25 +79,28 @@ while(True):
                     secs=time2set.tm_sec
                     print("Day:{}, Hour:{}, Mins:{}, Secs:{}".format(day,hour,mins,secs))
                     await t.async_set_daytime(day, hour, mins, secs)
+                
                 for t in uh1.thermos:
                     loop.run_until_complete(async_write_thermo(t))
+
             elif(key == '2'):
                 """ Update to set to 0 holiday hours (i.e. home)"""
                 async def async_write_thermo(t: heatmiser.Thermostat):
                     print ("===",t.get_name(),"===")
                     await t.async_set_holiday(0)
+            
                 for t in uh1.thermos:
                     asyncio.run(async_write_thermo(t))
-                    time.sleep(0.3)
 
             elif(key == '3'):
                 """ Update to set to max holiday hours (i.e. away)"""
                 async def async_write_thermo(t: heatmiser.Thermostat):
                     print ("===",t.get_name(),"===")
                     await t.async_set_holiday(1008)
+            
                 for t in uh1.thermos:
                     asyncio.run(async_write_thermo(t))
-                    time.sleep(0.3)
+        
         elif(key == 't'):
             key = input("Enter thrash period in seconds...")
             delay = int(key)        

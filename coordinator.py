@@ -32,7 +32,7 @@ class HMCoordinator(DataUpdateCoordinator):
         For me this is to open the serail connection
         """
         _LOGGER.debug("[RS] Coordinator _async_setup called with uh1 = {}".format(self.uh1))
-        await self.uh1.async_open_connection()
+        #await self.uh1.async_open_connection()
 
     async def async_update_data(self):
         """Fetch data from API endpoint.
