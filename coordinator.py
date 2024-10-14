@@ -45,6 +45,6 @@ class HMCoordinator(DataUpdateCoordinator):
             # Note: using context is not required if there is no need or ability to limit
             # data retrieved from API.
         _LOGGER.debug("[RS] Coordinator _async_update_data called with uh1 = {}".format(self.uh1))
-        await self.uh1.async_read_dcbs()
+        return await self.uh1.async_read_dcbs()
 
 

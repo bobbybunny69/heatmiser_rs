@@ -162,9 +162,9 @@ class UH1:
         msg = msg + crc.run(msg)
         _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
         self.writer.write(bytes(msg))   # Write payload to correct thermo
+        await self.writer.drain()
 
         _LOGGER.debug("[RS] reading back 7 byte ACK with timeout incase no connection")
-        write_success = False
         try:
             async with async_timeout.timeout(TIMEOUT) as timer:
                 response = await self.reader.readexactly(7)    #  Setup read ready to receive the 9 header bytes
@@ -172,12 +172,11 @@ class UH1:
         except Exception as e:
             _LOGGER.error("Thermo {}:  Error {}".format(thermo._id, e))
             _LOGGER.debug(traceback.format_exc())
-            write_success = False
-        if await self.async_read_dcb(thermo, TIMEOUT):
-            write_success = True
+            return False
+        await self.async_read_dcb(thermo, TIMEOUT)
         self.writer.close()
         await asyncio.sleep(0.1)
-        return write_success
+        return True
 
 class Thermostat():
     """Dummy thermostat (device for HA) for Hello World example."""
@@ -259,9 +258,10 @@ class Thermostat():
 
         if self.dcb[MODEL_ADDR] != PRTHW:
             _LOGGER.error("[RS] Refusing to set hot-water as incorrect thermo model")
+            return False
         else:
             datal = [onoff]
-            await self.uh1.async_write_bytes(self, DHW_ADDRW, datal)
+            return await self.uh1.async_write_bytes(self, DHW_ADDRW, datal)
 
     def get_holiday(self):
         if self.online == False:
@@ -279,7 +279,7 @@ class Thermostat():
         hi = int (hours/256)
         datal = [lo, hi]
         _LOGGER.info("[RS] Setting holiday with following data bytes {}".format(datal))
-        await self.uh1.async_write_bytes(self, HOLIDAYLEN_ADDR, datal)
+        return await self.uh1.async_write_bytes(self, HOLIDAYLEN_ADDR, datal)
 
     def get_run_mode(self):
         if self.online == False:
@@ -308,7 +308,7 @@ class Thermostat():
         """
         _LOGGER.info("[RS] HeatmiserThermostat set_daytime called with tsatid={}, DD,HH,MM,SS={},{},{},{}".format(self._id, day,hour,mins,secs))
         datal = [day, hour, mins, secs]
-        await self.uh1.async_write_bytes(self, DAYTIME_ADDRW, datal)
+        return await self.uh1.async_write_bytes(self, DAYTIME_ADDRW, datal)
 
     async def async_set_heat_schedule(self, weekend, sched_array):
         """
@@ -317,11 +317,11 @@ class Thermostat():
         """
         _LOGGER.info("[RS] HeatmiserThermostat set_schedule called (Heating)")
         if (weekend == True):
-            dcb_addr = WEEKEND_ADDR
+            dcb_addr = WEEKEND_ADDRW
         else:
-            dcb_addr = WEEKDAY_ADDR
+            dcb_addr = WEEKDAY_ADDRW
         _LOGGER.info("[RS] set_heat_schedule called with tsatid={}, DCB={}, {}".format(self._id, dcb_addr, sched_array))
-        await self.uh1.async_write_bytes(self, dcb_addr, sched_array)
+        return await self.uh1.async_write_bytes(self, dcb_addr, sched_array)
 
     async def async_set_dhw_schedule(self, weekend, sched_array):
         """
@@ -329,11 +329,11 @@ class Thermostat():
         """
         _LOGGER.info("[RS] HeatmiserThermostat set_dhw_schedule called (Hot water)")
         if (weekend == True):
-            dcb_addr = WEEKEND_DHW_ADDR
+            dcb_addr = WEEKEND_DHW_ADDRW
         else:
-            dcb_addr = WEEKDAY_DHW_ADDR
+            dcb_addr = WEEKDAY_DHW_ADDRW
         _LOGGER.info("[RS] set_dhw_schedule called with tsatid={}, DCB={}, {}".format(self._id, dcb_addr, sched_array))
-        await self.uh1.async_write_bytes(self, dcb_addr, sched_array)
+        return await self.uh1.async_write_bytes(self, dcb_addr, sched_array)
 
     def get_day(self):
         if self.online == False:
