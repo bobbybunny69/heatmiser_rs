@@ -94,7 +94,7 @@ class UH1:
             _LOGGER.debug(traceback.format_exc())
             self.online = False
             return False
-        _LOGGER.debug("[RS] Opened with reader, writer: ".format(self.reader, self.writer))
+        _LOGGER.debug("[RS] Opened with reader, writer: {} <<==>> {}".format(self.reader, self.writer))
         return True
 
     async def async_read_dcb(self, thermo: Thermostat, timeout):
@@ -106,7 +106,8 @@ class UH1:
         msg = msg + crc.run(msg)        
         _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
         self.writer.write(bytes(msg))   # Write a string to trigger tsat to send back a DCB
-        
+        await self.writer.drain()
+
         _LOGGER.debug("[RS] reading back 9 byte header with timeout incase no connection")
         try:
             async with async_timeout.timeout(timeout) as timer:
@@ -139,6 +140,7 @@ class UH1:
             if await self.async_read_dcb(thermo, TIMEOUT):
                 thermo.online = any_thermos_live = True                    
         self.writer.close()
+        await self.writer.wait_closed()
         return any_thermos_live         #  return status (True/False)
 
     async def async_write_bytes(self, thermo: Thermostat, dcb_addr, datal=[]):
@@ -165,6 +167,7 @@ class UH1:
         await self.writer.drain()
 
         _LOGGER.debug("[RS] reading back 7 byte ACK with timeout incase no connection")
+        return_flag = True
         try:
             async with async_timeout.timeout(TIMEOUT) as timer:
                 response = await self.reader.readexactly(7)    #  Setup read ready to receive the 9 header bytes
@@ -172,11 +175,11 @@ class UH1:
         except Exception as e:
             _LOGGER.error("Thermo {}:  Error {}".format(thermo._id, e))
             _LOGGER.debug(traceback.format_exc())
-            return False
-        await self.async_read_dcb(thermo, TIMEOUT)
+            return_flag = False
+        return_flag = await self.async_read_dcb(thermo, TIMEOUT)
         self.writer.close()
-        await asyncio.sleep(0.1)
-        return True
+        await asyncio.sleep(0.2)
+        return return_flag
 
 class Thermostat():
     """Dummy thermostat (device for HA) for Hello World example."""
