@@ -220,7 +220,7 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
 
     async def async_set_daytime(self, day, set_time):
         """Handle Set Daytime service call"""
-        days = {"mon":1, "tue":2, "wed":3, "thu":4, "fri":5, "sat":5, "sun":7}
+        days = {"mon":1, "tue":2, "wed":3, "thu":4, "fri":5, "sat":6, "sun":7}
         day = day[0]
         hour = set_time.hour
         mins = set_time.minute

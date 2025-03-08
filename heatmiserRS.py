@@ -6,9 +6,10 @@ based of a demonstration 'hub' that connects several devices.
 """
 from __future__ import annotations
 
-import asyncio, async_timeout
+import asyncio
+import async_timeout
 import serial_asyncio_fast as serial_asyncio
-import random
+#import serial_asyncio
 
 import logging, traceback
 _LOGGER = logging.getLogger(__name__)
@@ -91,7 +92,7 @@ class UH1:
             self.reader, self.writer = await serial_asyncio.open_serial_connection(url=self.socket)
         except Exception as e:
             _LOGGER.error("Error opening connection {}".format(e))
-            _LOGGER.debug(traceback.format_exc())
+            _LOGGER.error(traceback.format_exc())
             self.online = False
             return False
         _LOGGER.debug("[RS] Opened with reader, writer: {} <<==>> {}".format(self.reader, self.writer))
@@ -106,7 +107,7 @@ class UH1:
         msg = msg + crc.run(msg)        
         _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
         self.writer.write(bytes(msg))   # Write a string to trigger tsat to send back a DCB
-        await self.writer.drain()
+        #await self.writer.drain()
 
         _LOGGER.debug("[RS] reading back 9 byte header with timeout incase no connection")
         try:
@@ -114,8 +115,8 @@ class UH1:
                 header = await self.reader.readexactly(9)    #  Setup read ready to receive the 9 header bytes
                 _LOGGER.debug("[RS] Header bytes = {}".format(list(header)))
         except Exception as e:
-            _LOGGER.error("Thermo {}:  Error {}".format(thermo._id, e))
-            _LOGGER.debug(traceback.format_exc())
+            _LOGGER.error("Thermo {}:  Error reading DCB".format(thermo._id))
+            _LOGGER.error(traceback.format_exc())
             thermo.online = False
             return False
 
@@ -125,7 +126,7 @@ class UH1:
         thermo.dcb = list(bytes_read)[:-2]
         _LOGGER.debug("[RS] DCB bytes = {}".format(thermo.dcb))
         thermo.online = any_thermos_live = True            
-        await asyncio.sleep(0.1)    # Added delay as I think I am choking the reader with back2back DCB calls
+        await asyncio.sleep(0.2)    # Added delay as I think I am choking the reader with back2back DCB calls
 
     async def async_read_dcbs(self):
         """

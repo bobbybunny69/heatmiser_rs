@@ -1,4 +1,4 @@
-#!/bin/python3
+#!/srv/ha-3.13/bin/python3
 """
  Tests the heatmiser DH1 connection - simulates home assisatnt but thrashes 
 """
@@ -7,7 +7,7 @@ import time
 import asyncio
 import logging
 
-from const import *
+#from const import *
 """
 Read all thermos and benchmark time taken
 """
@@ -26,7 +26,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', level=logg
 delay=None
 # Set-up port connection to heatmiser system
 uh1 = heatmiser.UH1("socket://" + IP_ADDRESS + ":" + PORT)
-loop = asyncio.get_event_loop()
+loop = asyncio.new_event_loop()
 #if not loop.run_until_complete(uh1.async_open_connection()):
 #    print("Connection failed...  do retry action")
 #    exit(1)
