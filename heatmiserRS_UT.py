@@ -1,4 +1,4 @@
-#!/srv/ha-3.13/bin/python3
+#!/usr/bin/python3
 """
  Tests the heatmiser DH1 connection - simulates home assisatnt but thrashes 
 """

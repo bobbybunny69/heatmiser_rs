@@ -227,8 +227,8 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         secs =set_time.second
         _LOGGER.info("[RS] Set daytime sched with day={} hour={} mins={} secs={}".format(day, hour, mins, secs))
         day_num = days[day]
-        return await self._thermo.async_set_daytime(day_num, hour, mins, secs)   # Not working if I await TODO: WHY
-
+        return await self._thermo.async_set_daytime(day_num, hour, mins, secs)
+       
     async def async_set_heat_schedule(self, day, time1, temp1, time2=None, temp2=15, time3=None, temp3=15, time4=None, temp4=15):
         """Handle Set heat schedule service call  NOTE: Can only program in 30 minute intrevals """
         day = day[0]
@@ -255,9 +255,9 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         else:
             weekend = False
         _LOGGER.info("[RS] Set heat sched with Weekend={}, {}".format(weekend, sched))
-        return await self._thermo.async_set_heat_schedule(weekend, sched)  # Not working if I await TODO: WHY
+        return await self._thermo.async_set_heat_schedule(weekend, sched)
 
-    async def async_set_dhw_schedule(self, day, time1, dur_hrs1, time2, dur_hrs2):
+async def async_set_dhw_schedule(self, day, time1, dur_hrs1, time2, dur_hrs2):
         """Handle Set DHW service call (hard coded arrays at moment)"""
         _LOGGER.debug("[RS] async_set_dhw_schedule called with day={}, wakeup_time, duration={},{}".format(day, time1, dur_hrs1))
         day = day[0]
@@ -273,4 +273,4 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         else:
             weekend = False
         _LOGGER.info("[RS] Setting DHW schedule with Weekend={}, {}".format(weekend, sched))
-        return await self._thermo.async_set_dhw_schedule(weekend, sched)   # Not working if I await TODO: WHY
+        return await self._thermo.async_set_dhw_schedule(weekend, sched)   
