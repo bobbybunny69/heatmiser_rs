@@ -257,7 +257,7 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         _LOGGER.info("[RS] Set heat sched with Weekend={}, {}".format(weekend, sched))
         return await self._thermo.async_set_heat_schedule(weekend, sched)
 
-async def async_set_dhw_schedule(self, day, time1, dur_hrs1, time2, dur_hrs2):
+    async def async_set_dhw_schedule(self, day, time1, dur_hrs1, time2, dur_hrs2):
         """Handle Set DHW service call (hard coded arrays at moment)"""
         _LOGGER.debug("[RS] async_set_dhw_schedule called with day={}, wakeup_time, duration={},{}".format(day, time1, dur_hrs1))
         day = day[0]

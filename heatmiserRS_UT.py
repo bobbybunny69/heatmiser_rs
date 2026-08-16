@@ -66,7 +66,7 @@ while(True):
         if(key == 'q'):
             break
         elif(key== 'w'):
-            key = input("[1] update datetime, [2] hol hours min, [3] hol hours max")
+            key = input("[1] datetime, [2] holhours min, [3] holhours max, [4] DHW sched, [5] Heat sched")
             
             if(key == '1'):
                 """ Update datetime """
@@ -79,7 +79,6 @@ while(True):
                     secs=time2set.tm_sec
                     print("Day:{}, Hour:{}, Mins:{}, Secs:{}".format(day,hour,mins,secs))
                     await t.async_set_daytime(day, hour, mins, secs)
-                
                 for t in uh1.thermos:
                     loop.run_until_complete(async_write_thermo(t))
 
@@ -87,8 +86,7 @@ while(True):
                 """ Update to set to 0 holiday hours (i.e. home)"""
                 async def async_write_thermo(t: heatmiser.Thermostat):
                     print ("===",t.get_name(),"===")
-                    await t.async_set_holiday(0)
-            
+                    await t.async_set_holiday(0)            
                 for t in uh1.thermos:
                     asyncio.run(async_write_thermo(t))
 
@@ -97,7 +95,27 @@ while(True):
                 async def async_write_thermo(t: heatmiser.Thermostat):
                     print ("===",t.get_name(),"===")
                     await t.async_set_holiday(1008)
-            
+                for t in uh1.thermos:
+                    asyncio.run(async_write_thermo(t))
+
+            elif(key == '4'):
+                """ Update to set DHW schedule to Tstat 1 only"""
+                async def async_write_thermo(t: heatmiser.Thermostat):
+                    print ("===",t.get_name(),"===")
+                    sched_array = [4, 0, 4, 30, 7, 0, 8, 0, 13, 0, 13, 30, 19, 0, 20, 0]
+                    print("Array: {}".format(sched_array))
+                    await t.async_set_dhw_schedule(True, sched_array)
+                    await t.async_set_dhw_schedule(False, sched_array)
+                asyncio.run(async_write_thermo(uh1.thermos[0]))
+
+            elif(key == '5'):
+                """ Update to set heat schedule to all Tstats"""
+                async def async_write_thermo(t: heatmiser.Thermostat):
+                    print ("===",t.get_name(),"===")
+                    sched_array = [7, 0, 21, 9, 0, 16, 16, 0, 21, 22, 00, 16]
+                    print("Array: {}".format(sched_array))
+                    await t.async_set_heat_schedule(True, sched_array)
+                    await t.async_set_heat_schedule(False, sched_array)
                 for t in uh1.thermos:
                     asyncio.run(async_write_thermo(t))
         

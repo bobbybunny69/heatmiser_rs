@@ -107,7 +107,7 @@ class UH1:
         msg = msg + crc.run(msg)        
         _LOGGER.debug("[RS] Writing bytes: {}".format(msg))
         self.writer.write(bytes(msg))   # Write a string to trigger tsat to send back a DCB
-        #await self.writer.drain()
+        await self.writer.drain()
 
         _LOGGER.debug("[RS] reading back 9 byte header with timeout incase no connection")
         try:
@@ -142,6 +142,8 @@ class UH1:
                 thermo.online = any_thermos_live = True                    
         self.writer.close()
         await self.writer.wait_closed()
+        await asyncio.sleep(0.2)
+
         return any_thermos_live         #  return status (True/False)
 
     async def async_write_bytes(self, thermo: Thermostat, dcb_addr, datal=[]):
@@ -167,19 +169,35 @@ class UH1:
         self.writer.write(bytes(msg))   # Write payload to correct thermo
         await self.writer.drain()
 
-        _LOGGER.debug("[RS] reading back 7 byte ACK with timeout incase no connection")
+        _LOGGER.debug("[RS] reading back ACK with timeout")
         return_flag = True
+        
+        # Strat:  Read bytes until timeout as packest seem different lengths
+        # TODO: consider undersatdning more and making more robust
         try:
-            async with async_timeout.timeout(TIMEOUT) as timer:
-                response = await self.reader.readexactly(7)    #  Setup read ready to receive the 9 header bytes
-                _LOGGER.debug("[RS] Ack bytes = {}".format(list(response)))
-        except Exception as e:
-            _LOGGER.error("Thermo {}:  Error {}".format(thermo._id, e))
-            _LOGGER.debug(traceback.format_exc())
-            return_flag = False
+            length = 0
+            response = b""
+            while True:
+                byte = await asyncio.wait_for(self.reader.readexactly(1), timeout=0.2)
+                length += 1
+                response += byte
+        except asyncio.TimeoutError:
+            _LOGGER.debug("[RS] Timeout")
+        except asyncio.IncompleteReadError as e:
+            _LOGGER.error("[RS] Connection severed mid-transmission. Got: {}".format(e.partial))
+            return False
+
+        if length == 0:
+            _LOGGER.error("[RS] No ACK bytes detected")
+            return False
+        else:
+            _LOGGER.debug("[RS] Ack response = {}".format(list(response)))  
+        
         return_flag = await self.async_read_dcb(thermo, TIMEOUT)
         self.writer.close()
+        await self.writer.wait_closed()
         await asyncio.sleep(0.2)
+
         return return_flag
 
 class Thermostat():
@@ -327,7 +345,7 @@ class Thermostat():
         _LOGGER.info("[RS] set_heat_schedule called with tsatid={}, DCB={}, {}".format(self._id, dcb_addr, sched_array))
         return await self.uh1.async_write_bytes(self, dcb_addr, sched_array)
 
-    async def async_set_dhw_schedule(self, weekend, sched_array):
+    async def async_set_dhw_schedule(self, weekend:bool, sched_array:list[int]):
         """
         NOTE:  not using the self data array but setting direct to thermo
         """

@@ -1,0 +1,55 @@
+set_dhw_schedule:
+  name: Set DHW Schedule
+  description: Set the Domestic hot water schedule for the set day of the week.
+  fields:
+    day:
+      name: Day
+      description: Day of the week to set the schedule.
+      required: true
+      selector:
+        weekdays: {}
+    wakeup_time:
+      name: Wakeup Time
+      description: Wake-up time for the schedule.
+      required: true
+      selector:
+        time:
+
+set_heat_schedule:
+  name: Set Heat Schedule
+  description: Set the heating schedule for the set day of the week.
+  fields:
+    day:
+      name: Day
+      description: Day of the week to set the schedule.
+      required: true
+      selector:
+        weekdays: {}
+    time_1:
+      name: Time 1
+      required: true
+      selector:
+        time:
+    temperature_1:
+      name: Temperature 1
+      required: true
+      selector:
+        number:
+          min: 5
+          max: 35
+          unit_of_measurement: "°C"
+
+set_daytime:
+  name: Set Daytime
+  description: Set the time on the thermostat.
+  fields:
+    day:
+      name: Day
+      required: true
+      selector:
+        weekdays: {}
+    set_time:
+      name: Time to set
+      required: true
+      selector:
+        time:
