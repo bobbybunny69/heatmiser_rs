@@ -13,7 +13,7 @@ set_dhw_schedule:
       description: Wake-up time for the schedule.
       required: true
       selector:
-        time:
+        time: {}
 
 set_heat_schedule:
   name: Set Heat Schedule
@@ -52,4 +52,4 @@ set_daytime:
       name: Time to set
       required: true
       selector:
-        time:
+        time: {}
