@@ -150,7 +150,7 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
 
     async def async_set_temperature(self, **kwargs) -> None:
         """Set new target temperature."""
-        _LOGGER.debug("[RS] set_temperature called with {}".format(kwargs.get(ATTR_TEMPERATURE)))
+        _LOGGER.info("[RS] set_temperature called with {}".format(kwargs.get(ATTR_TEMPERATURE)))
         temperature = kwargs.get(ATTR_TEMPERATURE)
         self._attr_target_temperature = temperature
         result =  await self._thermo.async_set_target_temp(int(temperature))
@@ -160,7 +160,7 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
 
     async def async_set_preset_mode(self, preset_mode: str):
         """Set new preset mode."""
-        _LOGGER.debug("[RS] set_preset_mode called with {}".format(preset_mode))
+        _LOGGER.info("[RS] set_preset_mode called with {}".format(preset_mode))
         self._attr_preset_mode = preset_mode
 
         if preset_mode == PRESET_HOME:
@@ -172,11 +172,11 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
 
     async def async_set_hvac_mode(self, **kwargs):
         """Dummy stub as not sure this can be made to do anything sensible but needed to show heat state?"""
-        _LOGGER.debug("[RS] set_hvac_mode called with {} but ignoring".format(kwargs))
+        _LOGGER.info("[RS] set_hvac_mode called with {} but ignoring".format(kwargs))
 
     async def async_set_fan_mode(self, mode: str):
         """Set new preset mode."""
-        _LOGGER.debug("[RS] set_fan_mode called with {}".format(mode))
+        _LOGGER.info("[RS] set_fan_mode called with {}".format(mode))
         self._attr_fan_mode = mode
         if mode == FAN_OFF:
             result = await self._thermo.async_set_hotwater(HW_F_OFF)  # Force off
