@@ -91,8 +91,8 @@ class UH1:
         try:
             self.reader, self.writer = await serial_asyncio.open_serial_connection(url=self.socket)
         except Exception as e:
-            _LOGGER.error("Error opening connection {}".format(e))
-            _LOGGER.error(traceback.format_exc())
+            _LOGGER.error("[RS] Error opening connection {}".format(e))
+            _LOGGER.error("[RS] {}".format(traceback.format_exc()))
             self.online = False
             return False
         _LOGGER.debug("[RS] Opened with reader, writer: {} <<==>> {}".format(self.reader, self.writer))
@@ -120,8 +120,8 @@ class UH1:
             async with async_timeout.timeout(timeout) as timer:
                 bytes_read = await self.reader.readexactly(num_bytes+2)    #  Read DCB + CRC
         except Exception as e:
-            _LOGGER.error("Thermo {}:  Error reading DCB".format(thermo._id))
-            _LOGGER.error(traceback.format_exc())
+            _LOGGER.error("[RS] Thermo {}:  Error reading DCB".format(thermo._id))
+            _LOGGER.error("[RS] {}".format(traceback.format_exc()))
             thermo.online = False
             return False
 

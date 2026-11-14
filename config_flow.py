@@ -92,7 +92,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except InvalidHost:
                 errors["host"] = "cannot_connect"
             except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
+                _LOGGER.exception("[RS] Unexpected exception")
                 errors["base"] = "unknown"
 
             if "base" not in errors:

@@ -36,7 +36,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
 
     # This gets the data update coordinator from hass.data as specified in your __init__.py
     coordinator: HMCoordinator = config_entry.runtime_data.coordinator
-    _LOGGER.debug("coordinator = {}".format(coordinator))
+    _LOGGER.debug("[RS] coordinator = {}".format(coordinator))
   
     # Enumerate all the Thermos in your data value from your DataUpdateCoordinator 
     # and add an instance of HMThermostat class to a list for each one.
@@ -46,7 +46,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities) -> None:
     ]   
     # Create the thermostats
     async_add_entities(thermos)
-    _LOGGER.debug("async_add_entries callback called with {}".format(thermos))
+    _LOGGER.debug("[RS] async_add_entries callback called with {}".format(thermos))
 
     # Register the entity service callbacks to set schedules, time, etc
     platform = entity_platform.async_get_current_platform()
@@ -74,7 +74,7 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
 
     def __init__(self, coordinator, thermo: Thermostat):
         """Initialize the themrostat."""
-        _LOGGER.debug("HMThermostat __init__ called with coord,thermo {} {}".format(coordinator, thermo))
+        _LOGGER.debug("[RS] HMThermostat __init__ called with coord,thermo {} {}".format(coordinator, thermo))
         """Pass coordinator to CoordinatorEntity."""
         super().__init__(coordinator, context=thermo)
         self._thermo: Thermostat = thermo
@@ -213,9 +213,9 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         else:
             self._count_retries +=1
             if self._count_retries >= 3:
-                _LOGGER.debug("HMThermostat {} failed 3 attemps so offline".format(self._thermo._id))
+                _LOGGER.debug("[RS] HMThermostat {} failed 3 attemps so offline".format(self._thermo._id))
                 return False 
-        _LOGGER.debug("HMThermostat avaiable: Thermo online = {}, count = {} ".format(self._thermo.online, self._count_retries))
+        _LOGGER.debug("[RS] HMThermostat avaiable: Thermo online = {}, count = {} ".format(self._thermo.online, self._count_retries))
         return True
 
     async def async_set_daytime(self, day, set_time):
