@@ -64,6 +64,12 @@ WEEKEND_ADDRW = 59
 WEEKDAY_DHW_ADDRW = 71
 WEEKEND_DHW_ADDRW = 87
 
+def err_str(e: Exception) -> str:
+    """Short one-line description of an exception for ERROR logs (full traceback goes to DEBUG)"""
+    if isinstance(e, (asyncio.TimeoutError, TimeoutError)):
+        return "timed out"
+    return repr(e)
+
 class UH1:
     """Hub for heatmiser control"""
     manufacturer = "Heatmiser"
@@ -95,8 +101,8 @@ class UH1:
             async with async_timeout.timeout(CONNECT_TIMEOUT) as timer:
                 self.reader, self.writer = await serial_asyncio.open_serial_connection(url=self.socket)
         except Exception as e:
-            _LOGGER.error("[RS] Error opening connection {}".format(repr(e)))
-            _LOGGER.error("[RS] {}".format(traceback.format_exc()))
+            _LOGGER.error("[RS] Error opening connection to {} - {}".format(self.socket, err_str(e)))
+            _LOGGER.debug("[RS] {}".format(traceback.format_exc()))
             self.online = False
             return False
         _LOGGER.debug("[RS] Opened with reader, writer: {} <<==>> {}".format(self.reader, self.writer))
@@ -134,8 +140,8 @@ class UH1:
             async with async_timeout.timeout(timeout) as timer:
                 bytes_read = await self.reader.readexactly(num_bytes+2)    #  Read DCB + CRC
         except Exception as e:
-            _LOGGER.error("[RS] Thermo {}:  Error reading DCB".format(thermo._id))
-            _LOGGER.error("[RS] {}".format(traceback.format_exc()))
+            _LOGGER.error("[RS] Thermo {}:  Error reading DCB - {}".format(thermo._id, err_str(e)))
+            _LOGGER.debug("[RS] {}".format(traceback.format_exc()))
             thermo.set_read_failed()
             return False
 
@@ -181,8 +187,8 @@ class UH1:
             try:
                 return await self._async_write_bytes(thermo, dcb_addr, datal)
             except Exception as e:
-                _LOGGER.error("[RS] Thermo {}:  Error writing bytes {}".format(thermo._id, repr(e)))
-                _LOGGER.error("[RS] {}".format(traceback.format_exc()))
+                _LOGGER.error("[RS] Thermo {}:  Error writing bytes - {}".format(thermo._id, err_str(e)))
+                _LOGGER.debug("[RS] {}".format(traceback.format_exc()))
                 return False
             finally:
                 await self.async_close_connection()
