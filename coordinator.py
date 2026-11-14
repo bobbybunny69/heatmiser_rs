@@ -1,6 +1,6 @@
 """Platform for climate integration."""
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from .heatmiserRS import UH1
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from .heatmiserRS import UH1, MAX_FAILS
 from .const import DOMAIN
 from datetime import timedelta
 import logging
@@ -14,7 +14,7 @@ class HMCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, config_entry, socket_str):
         """Initialize my coordinator."""
         _LOGGER.debug("[RS] Coordinator _init_ with socket= {}".format(socket_str))
-        
+
         super().__init__(
             hass,
             _LOGGER,    # Name of the data. For logging purposes.
@@ -24,6 +24,7 @@ class HMCoordinator(DataUpdateCoordinator):
             )
 
         self.uh1 = UH1(socket_str)
+        self.hub_fail_count = 0     # Consecutive polls where the hub (or every thermo) failed
 
     async def _async_setup(self):
         """Set up the coordinator
@@ -39,12 +40,16 @@ class HMCoordinator(DataUpdateCoordinator):
 
         This is the place to pre-process the data to lookup tables
         so entities can quickly look up their data.
+        Raises UpdateFailed (entities go unavailable) if the hub has failed MAX_FAILS polls
+        in a row, or straight away on the first refresh so HA retries the setup.
         """
-        #async with async_timeout.timeout(10):
-            # Grab active context variables to limit data required to be fetched from API
-            # Note: using context is not required if there is no need or ability to limit
-            # data retrieved from API.
         _LOGGER.debug("[RS] Coordinator _async_update_data called with uh1 = {}".format(self.uh1))
-        return await self.uh1.async_read_dcbs()
+        if await self.uh1.async_read_dcbs():
+            self.hub_fail_count = 0
+            return True
 
-
+        self.hub_fail_count += 1
+        if self.data is None or self.hub_fail_count >= MAX_FAILS:
+            raise UpdateFailed("[RS] Hub offline or no thermos responded ({} failed polls in a row)".format(self.hub_fail_count))
+        _LOGGER.warning("[RS] Hub offline or no thermos responded ({} of {} failed polls before unavailable)".format(self.hub_fail_count, MAX_FAILS))
+        return False

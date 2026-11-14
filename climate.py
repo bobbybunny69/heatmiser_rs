@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.helpers import entity_platform, service
 from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE, ATTR_ENTITY_ID
+from homeassistant.exceptions import HomeAssistantError
 
 from .heatmiserRS import Thermostat, MIN_TEMP, MAX_TEMP, HOLIDAY_HOURS_MAX, HW_F_ON, HW_F_OFF
 from .const import DOMAIN, SET_DHW_SCHEDULE_SCHEMA, SET_HEAT_SCHEDULE_SCHEMA, SET_DAYTIME_SCHEMA
@@ -80,7 +81,6 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         self._thermo: Thermostat = thermo
         self._name = self._thermo.name
         self._id = self._thermo._id
-        self._count_retries = 0
         
         self._attr_unique_id = "hmrsthermo_" + str(self._id)
         self._attr_name = self._thermo.name
@@ -152,8 +152,9 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         """Set new target temperature."""
         _LOGGER.info("[RS] set_temperature called with {}".format(kwargs.get(ATTR_TEMPERATURE)))
         temperature = kwargs.get(ATTR_TEMPERATURE)
-        self._attr_native_target_temperature = temperature
         result =  await self._thermo.async_set_target_temp(int(temperature))
+        self._check_write(result, "set target temperature")
+        self._attr_native_target_temperature = temperature
         self._attr_hvac_mode = HVACMode.HEAT if self._thermo.get_heat_status() else HVACMode.OFF
         self.async_write_ha_state()
         return result
@@ -161,12 +162,13 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
     async def async_set_preset_mode(self, preset_mode: str):
         """Set new preset mode."""
         _LOGGER.info("[RS] set_preset_mode called with {}".format(preset_mode))
-        self._attr_preset_mode = preset_mode
 
         if preset_mode == PRESET_HOME:
             result = await self._thermo.async_set_holiday(0)
         else:
             result = await self._thermo.async_set_holiday(HOLIDAY_HOURS_MAX)
+        self._check_write(result, "set preset mode")
+        self._attr_preset_mode = preset_mode
         self.async_write_ha_state()
         return result
 
@@ -177,11 +179,12 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
     async def async_set_fan_mode(self, mode: str):
         """Set new preset mode."""
         _LOGGER.info("[RS] set_fan_mode called with {}".format(mode))
-        self._attr_fan_mode = mode
         if mode == FAN_OFF:
             result = await self._thermo.async_set_hotwater(HW_F_OFF)  # Force off
         else:
             result = await self._thermo.async_set_hotwater(HW_F_ON)
+        self._check_write(result, "set hot water")
+        self._attr_fan_mode = mode
         self.async_write_ha_state()
         return result
 
@@ -207,16 +210,14 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
     # If an entity is offline (return False), the UI will refelect this.
     @property
     def available(self) -> bool:
-        """Return False if thermo is not available for thre retries """
-        if self._thermo.online:
-            self._count_retries = 0
-        else:
-            self._count_retries +=1
-            if self._count_retries >= 3:
-                _LOGGER.debug("[RS] HMThermostat {} failed 3 attemps so offline".format(self._thermo._id))
-                return False 
-        _LOGGER.debug("[RS] HMThermostat avaiable: Thermo online = {}, count = {} ".format(self._thermo.online, self._count_retries))
-        return True
+        """Return False if the coordinator poll failed or thermo has failed MAX_FAILS reads in a row"""
+        _LOGGER.debug("[RS] HMThermostat available: Thermo online = {}, fail count = {} ".format(self._thermo.online, self._thermo.fail_count))
+        return super().available and self._thermo.available
+
+    def _check_write(self, result, action: str) -> None:
+        """Raise an error (shown in the UI / stops automations) if a write to the thermo failed"""
+        if not result:
+            raise HomeAssistantError("Heatmiser: failed to {} on {} (hub offline or no ACK)".format(action, self._thermo.name))
 
     async def async_set_daytime(self, day, set_time):
         """Handle Set Daytime service call"""
@@ -227,7 +228,9 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         secs =set_time.second
         _LOGGER.info("[RS] Set daytime sched with day={} hour={} mins={} secs={}".format(day, hour, mins, secs))
         day_num = days[day]
-        return await self._thermo.async_set_daytime(day_num, hour, mins, secs)
+        result = await self._thermo.async_set_daytime(day_num, hour, mins, secs)
+        self._check_write(result, "set day/time")
+        return result
        
     async def async_set_heat_schedule(self, day, time1, temp1, time2=None, temp2=15, time3=None, temp3=15, time4=None, temp4=15):
         """Handle Set heat schedule service call  NOTE: Can only program in 30 minute intrevals """
@@ -255,7 +258,9 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         else:
             weekend = False
         _LOGGER.info("[RS] Set heat sched with Weekend={}, {}".format(weekend, sched))
-        return await self._thermo.async_set_heat_schedule(weekend, sched)
+        result = await self._thermo.async_set_heat_schedule(weekend, sched)
+        self._check_write(result, "set heat schedule")
+        return result
 
     async def async_set_dhw_schedule(self, day, time1, dur_hrs1, time2, dur_hrs2):
         """Handle Set DHW service call (hard coded arrays at moment)"""
@@ -273,4 +278,6 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         else:
             weekend = False
         _LOGGER.info("[RS] Setting DHW schedule with Weekend={}, {}".format(weekend, sched))
-        return await self._thermo.async_set_dhw_schedule(weekend, sched)   
+        result = await self._thermo.async_set_dhw_schedule(weekend, sched)
+        self._check_write(result, "set DHW schedule")
+        return result   
