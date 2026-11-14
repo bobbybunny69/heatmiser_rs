@@ -88,7 +88,7 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         self._attr_min_temp = MIN_TEMP
         self._attr_max_temp = MAX_TEMP
 
-        self._attr_temperature_unit = UnitOfTemperature.CELSIUS
+        self._attr_native_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_target_temperature_step = 1
         self._attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
         self._attr_supported_features |= ClimateEntityFeature.TURN_ON
@@ -104,8 +104,8 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         self._attr_hvac_mode = HVACMode.HEAT if self._thermo.get_heat_status() else HVACMode.OFF
         self._attr_preset_mode = PRESET_AWAY if self._thermo.get_holiday() else PRESET_HOME
         self._attr_fan_mode = FAN_ON if self._thermo.get_hotwater_status() else FAN_OFF
-        self._attr_current_temperature = self._thermo.get_room_temp()
-        self._attr_target_temperature = self._thermo.get_target_temp()
+        self._attr_native_current_temperature = self._thermo.get_room_temp()
+        self._attr_native_target_temperature = self._thermo.get_target_temp()
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -114,8 +114,8 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         self._attr_hvac_mode = HVACMode.HEAT if self._thermo.get_heat_status() else HVACMode.OFF
         self._attr_preset_mode = PRESET_AWAY if self._thermo.get_holiday() else PRESET_HOME
         self._attr_fan_mode = FAN_ON if self._thermo.get_hotwater_status() else FAN_OFF
-        self._attr_current_temperature = self._thermo.get_room_temp()
-        self._attr_target_temperature = self._thermo.get_target_temp()
+        self._attr_native_current_temperature = self._thermo.get_room_temp()
+        self._attr_native_target_temperature = self._thermo.get_target_temp()
         self.async_write_ha_state()
 
     @property
@@ -137,22 +137,22 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         return self._attr_fan_mode
 
     @property
-    def current_temperature(self):
+    def native_current_temperature(self):
         """Return the current temperature."""
-        _LOGGER.debug("[RS] current_temperature for tstat-{} returns {}".format(self._id,self._attr_current_temperature))
-        return self._attr_current_temperature
+        _LOGGER.debug("[RS] current_temperature for tstat-{} returns {}".format(self._id,self._attr_native_current_temperature))
+        return self._attr_native_current_temperature
 
     @property
-    def target_temperature(self):
+    def native_target_temperature(self):
         """Return the temperature we try to reach."""
-        _LOGGER.debug("[RS] target_temperature for tstat-{} returns {}".format(self._id,self._attr_target_temperature))
-        return self._attr_target_temperature
+        _LOGGER.debug("[RS] target_temperature for tstat-{} returns {}".format(self._id,self._attr_native_target_temperature))
+        return self._attr_native_target_temperature
 
     async def async_set_temperature(self, **kwargs) -> None:
         """Set new target temperature."""
         _LOGGER.info("[RS] set_temperature called with {}".format(kwargs.get(ATTR_TEMPERATURE)))
         temperature = kwargs.get(ATTR_TEMPERATURE)
-        self._attr_target_temperature = temperature
+        self._attr_native_target_temperature = temperature
         result =  await self._thermo.async_set_target_temp(int(temperature))
         self._attr_hvac_mode = HVACMode.HEAT if self._thermo.get_heat_status() else HVACMode.OFF
         self.async_write_ha_state()

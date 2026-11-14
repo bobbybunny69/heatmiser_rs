@@ -1,0 +1,13 @@
+{
+  "services": {
+    "set_heat_schedule": {
+      "service": "mdi:thermometer"
+    },
+    "set_dhw_schedule": {
+      "service": "mdi:water-boiler"
+    },
+    "set_daytime": {
+      "service": "mdi:clock-outline"
+    }
+  }
+}

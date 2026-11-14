@@ -66,10 +66,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Hello World."""
 
     VERSION = 1
-    # Pick one of the available connection classes in homeassistant/config_entries.py
-    # This tells HA if it should be asking for updates, or it'll be notified of updates
-    # automatically. Using PollT
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
+    # Connection class (local polling) is now set by iot_class in manifest.json
 
     _LOGGER.debug("[RS] config flow ConfigFlow class setup with DOMAIN {}".format(DOMAIN))
     async def async_step_user(self, user_input=None):

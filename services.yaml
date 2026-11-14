@@ -1,36 +1,84 @@
 set_dhw_schedule:
   name: Set DHW Schedule
-  description: Set the Domestic hot water schedule for the set day of the week.
+  description: Set the Domestic hot water schedule for the weekday (Mon-Fri) or weekend (Sat-Sun) block containing the chosen day. Fixed 04:00-04:30 and 13:00-13:30 slots are always included.
+  target:
+    entity:
+      integration: heatmiser_rs
+      domain: climate
   fields:
     day:
       name: Day
-      description: Day of the week to set the schedule.
+      description: Day of the week (picks the weekday or weekend schedule).
       required: true
       selector:
-        weekdays: {}
-    wakeup_time:
-      name: Wakeup Time
-      description: Wake-up time for the schedule.
+        select:
+          options: &days
+            - label: Monday
+              value: mon
+            - label: Tuesday
+              value: tue
+            - label: Wednesday
+              value: wed
+            - label: Thursday
+              value: thu
+            - label: Friday
+              value: fri
+            - label: Saturday
+              value: sat
+            - label: Sunday
+              value: sun
+    time1:
+      name: Morning on time
+      description: Time the morning hot water comes on.
       required: true
       selector:
         time: {}
+    dur_hrs1:
+      name: Morning duration
+      description: Hours the morning hot water stays on.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+          unit_of_measurement: "h"
+    time2:
+      name: Evening on time
+      description: Time the evening hot water comes on.
+      required: true
+      selector:
+        time: {}
+    dur_hrs2:
+      name: Evening duration
+      description: Hours the evening hot water stays on.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+          unit_of_measurement: "h"
 
 set_heat_schedule:
   name: Set Heat Schedule
-  description: Set the heating schedule for the set day of the week.
+  description: Set the heating schedule for the weekday (Mon-Fri) or weekend (Sat-Sun) block containing the chosen day. Times must be on the hour or half hour.
+  target:
+    entity:
+      integration: heatmiser_rs
+      domain: climate
   fields:
     day:
       name: Day
-      description: Day of the week to set the schedule.
+      description: Day of the week (picks the weekday or weekend schedule).
       required: true
       selector:
-        weekdays: {}
-    time_1:
+        select:
+          options: *days
+    time1:
       name: Time 1
       required: true
       selector:
-        time:
-    temperature_1:
+        time: {}
+    temp1:
       name: Temperature 1
       required: true
       selector:
@@ -38,16 +86,58 @@ set_heat_schedule:
           min: 5
           max: 35
           unit_of_measurement: "°C"
+          mode: box
+    time2:
+      name: Time 2
+      selector:
+        time: {}
+    temp2:
+      name: Temperature 2
+      selector:
+        number:
+          min: 5
+          max: 35
+          unit_of_measurement: "°C"
+          mode: box
+    time3:
+      name: Time 3
+      selector:
+        time: {}
+    temp3:
+      name: Temperature 3
+      selector:
+        number:
+          min: 5
+          max: 35
+          unit_of_measurement: "°C"
+          mode: box
+    time4:
+      name: Time 4
+      selector:
+        time: {}
+    temp4:
+      name: Temperature 4
+      selector:
+        number:
+          min: 5
+          max: 35
+          unit_of_measurement: "°C"
+          mode: box
 
 set_daytime:
   name: Set Daytime
-  description: Set the time on the thermostat.
+  description: Set the day and time on the thermostat.
+  target:
+    entity:
+      integration: heatmiser_rs
+      domain: climate
   fields:
     day:
       name: Day
       required: true
       selector:
-        weekdays: {}
+        select:
+          options: *days
     set_time:
       name: Time to set
       required: true
