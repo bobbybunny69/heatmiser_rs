@@ -114,19 +114,22 @@ class UH1:
             async with async_timeout.timeout(timeout) as timer:
                 header = await self.reader.readexactly(9)    #  Setup read ready to receive the 9 header bytes
                 _LOGGER.debug("[RS] Header bytes = {}".format(list(header)))
+
+            _LOGGER.debug("[RS] reading back rest of DCB with timeout incase thermo stops mid-message")
+            num_bytes = list(header)[7]
+            async with async_timeout.timeout(timeout) as timer:
+                bytes_read = await self.reader.readexactly(num_bytes+2)    #  Read DCB + CRC
         except Exception as e:
             _LOGGER.error("Thermo {}:  Error reading DCB".format(thermo._id))
             _LOGGER.error(traceback.format_exc())
             thermo.online = False
             return False
 
-        _LOGGER.debug("[RS] reading back rest of DCB")
-        num_bytes = list(header)[7]            
-        bytes_read = await self.reader.readexactly(num_bytes+2)    #  Read DCB + CRC
         thermo.dcb = list(bytes_read)[:-2]
         _LOGGER.debug("[RS] DCB bytes = {}".format(thermo.dcb))
-        thermo.online = any_thermos_live = True            
+        thermo.online = True
         await asyncio.sleep(0.2)    # Added delay as I think I am choking the reader with back2back DCB calls
+        return True
 
     async def async_read_dcbs(self):
         """
@@ -139,7 +142,7 @@ class UH1:
         any_thermos_live = False
         for thermo in self.thermos:
             if await self.async_read_dcb(thermo, TIMEOUT):
-                thermo.online = any_thermos_live = True                    
+                any_thermos_live = True
         self.writer.close()
         await self.writer.wait_closed()
         await asyncio.sleep(0.2)
