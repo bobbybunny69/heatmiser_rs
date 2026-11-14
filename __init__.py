@@ -43,6 +43,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})
 
+    # Entries created before the config flow set a unique_id get one now (host:port)
+    if entry.unique_id is None:
+        unique_id = "{}:{}".format(entry.data[CONF_HOST], entry.data[CONF_PORT])
+        _LOGGER.debug("[RS] Setting missing unique_id on config entry to {}".format(unique_id))
+        hass.config_entries.async_update_entry(entry, unique_id=unique_id)
+
     # Initialise the coordinator that manages data updates from your api.
     # pass socket string so that we can initiailise the connection
     socket_str = "socket://" + entry.data[CONF_HOST] + ":" + entry.data[CONF_PORT]
