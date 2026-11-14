@@ -7,7 +7,7 @@ v4:  Added coordinator task and fixed blocking calls issue (by adding add_execut
 v5:  Working version locked to start improvements
 v6:  Various imporvements to robustness and fully async
 v7:  Wrapped port open/close around read/writes to improve connectivty reliability
-TODO: Sort out the thermo avaiablity (hub down event breaks it)
+v8:  HA 2026.11 compatibility, hub-down handling and error reporting, service validation, config flow fixes
 """
 from __future__ import annotations
 

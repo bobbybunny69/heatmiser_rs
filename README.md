@@ -26,6 +26,8 @@ __Note:__   `sensors.py` not used but just in case I want to add later
 * v4:  Added coordinator task and fixed blocking calls issue (by adding add_executor asyncio call for serport.close)
 * v5:  Snapshot of last known working version
 * v6:  Major changes to address async issues, and changes to latest HASS updates 
+* v7:  Wrapped port open/close around read/writes to improve connectivty reliability
+* v8:  HA 2026.11 compatibility, hub-down handling and error reporting, service validation, config flow fixes
 
 # ToDo
 - [ ] Make the detection of thermostats automated

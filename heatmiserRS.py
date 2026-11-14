@@ -7,7 +7,6 @@ based of a demonstration 'hub' that connects several devices.
 from __future__ import annotations
 
 import asyncio
-import async_timeout
 import serial_asyncio_fast as serial_asyncio
 #import serial_asyncio
 
@@ -98,7 +97,7 @@ class UH1:
         _LOGGER.debug("[RS] async_open_connection Opening serial port")
         # Using stream reader and writer
         try:
-            async with async_timeout.timeout(CONNECT_TIMEOUT) as timer:
+            async with asyncio.timeout(CONNECT_TIMEOUT):
                 self.reader, self.writer = await serial_asyncio.open_serial_connection(url=self.socket)
         except Exception as e:
             _LOGGER.error("[RS] Error opening connection to {} - {}".format(self.socket, err_str(e)))
@@ -131,13 +130,13 @@ class UH1:
             await self.writer.drain()
 
             _LOGGER.debug("[RS] reading back 9 byte header with timeout incase no connection")
-            async with async_timeout.timeout(timeout) as timer:
+            async with asyncio.timeout(timeout):
                 header = await self.reader.readexactly(9)    #  Setup read ready to receive the 9 header bytes
                 _LOGGER.debug("[RS] Header bytes = {}".format(list(header)))
 
             _LOGGER.debug("[RS] reading back rest of DCB with timeout incase thermo stops mid-message")
             num_bytes = list(header)[7]
-            async with async_timeout.timeout(timeout) as timer:
+            async with asyncio.timeout(timeout):
                 bytes_read = await self.reader.readexactly(num_bytes+2)    #  Read DCB + CRC
         except Exception as e:
             _LOGGER.error("[RS] Thermo {}:  Error reading DCB - {}".format(thermo._id, err_str(e)))
