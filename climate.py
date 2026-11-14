@@ -18,7 +18,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.helpers import entity_platform, service
 from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE, ATTR_ENTITY_ID
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from .heatmiserRS import Thermostat, MIN_TEMP, MAX_TEMP, HOLIDAY_HOURS_MAX, HW_F_ON, HW_F_OFF, HEAT_MODE, AWAY
 from .const import DOMAIN, SET_DHW_SCHEDULE_SCHEMA, SET_HEAT_SCHEDULE_SCHEMA, SET_DAYTIME_SCHEMA
@@ -258,27 +258,30 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         self._check_write(result, "set day/time")
         return result
        
-    async def async_set_heat_schedule(self, day, time1, temp1, time2=None, temp2=15, time3=None, temp3=15, time4=None, temp4=15):
+    async def async_set_heat_schedule(self, day, time1, temp1, time2=None, temp2=None, time3=None, temp3=None, time4=None, temp4=None):
         """Handle Set heat schedule service call  NOTE: Can only program in 30 minute intrevals """
         day = day[0]
-        hour1 = time1.hour
-        mins1 = time1.minute
-        hour2 = hour3 = hour4 = 24
-        mins2 = mins3 = mins4 = 0
-        if(time2 != None):
-            hour2 = time2.hour
-            mins2 = time2.minute
-        if(time3 != None):
-            hour3 = time3.hour
-            mins3 = time3.minute
-        if(time4 != None):
-            hour4 = time4.hour
-            mins4 = time4.minute
-        if(mins1 in [0,30] and mins2 in [0,30] and mins3 in [0,30] and mins4 in [0,30]):
-            _LOGGER.debug("[RS] Set heat sched called with valid minute setting")
-        else:
-            _LOGGER.error("[RS] Set heat sched called with a non 30 minute interval")
-        sched = [hour1,mins1, temp1, hour2,mins2, temp2, hour3,mins3, temp3, hour4,mins4, temp4]
+        sched = []
+        prev_mins = None
+        prev_slot = 0
+        for n, (t, temp) in enumerate([(time1, temp1), (time2, temp2), (time3, temp3), (time4, temp4)], start=1):
+            if t is None and temp is None:
+                sched += [24, 0, 15]    # Hour 24 = period cancelled
+                continue
+            if t is None or temp is None:
+                raise ServiceValidationError("Heatmiser: time{0} and temp{0} must be given together".format(n))
+            if prev_slot != n-1:
+                raise ServiceValidationError("Heatmiser: time{} given but time{} is missing (periods must be filled in order)".format(n, n-1))
+            if t.minute not in [0, 30]:
+                raise ServiceValidationError("Heatmiser: time{} ({:02d}:{:02d}) must be on the hour or half hour".format(n, t.hour, t.minute))
+            if not MIN_TEMP <= temp <= MAX_TEMP:
+                raise ServiceValidationError("Heatmiser: temp{} ({}) must be between {} and {}".format(n, temp, MIN_TEMP, MAX_TEMP))
+            mins = t.hour*60 + t.minute
+            if prev_mins is not None and mins <= prev_mins:
+                raise ServiceValidationError("Heatmiser: time{} ({:02d}:{:02d}) must be later than time{}".format(n, t.hour, t.minute, n-1))
+            prev_mins = mins
+            prev_slot = n
+            sched += [t.hour, t.minute, temp]
         if day=='sat' or day=='sun':
             weekend = True
         else:
@@ -289,13 +292,23 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         return result
 
     async def async_set_dhw_schedule(self, day, time1, dur_hrs1, time2, dur_hrs2):
-        """Handle Set DHW service call (hard coded arrays at moment)"""
-        _LOGGER.debug("[RS] async_set_dhw_schedule called with day={}, wakeup_time, duration={},{}".format(day, time1, dur_hrs1))
+        """Handle Set DHW service call - fixed 04:00-04:30 and 13:00-13:30 slots, plus a morning and evening period"""
+        _LOGGER.debug("[RS] async_set_dhw_schedule called with day={}, times={},{} durations={},{}".format(day, time1, time2, dur_hrs1, dur_hrs2))
         day = day[0]
         hr1 = time1.hour
         mins1 = time1.minute
         hr2 = time2.hour
         mins2 = time2.minute
+        if dur_hrs1 < 1 or dur_hrs2 < 1:
+            raise ServiceValidationError("Heatmiser: DHW durations must be at least 1 hour")
+        if (hr1, mins1) < (4, 30):
+            raise ServiceValidationError("Heatmiser: DHW morning on time ({:02d}:{:02d}) must be 04:30 or later (after the fixed 04:00-04:30 slot)".format(hr1, mins1))
+        if (hr1+dur_hrs1, mins1) > (13, 0):
+            raise ServiceValidationError("Heatmiser: DHW morning period ({:02d}:{:02d} for {}h) must end by 13:00 (before the fixed 13:00-13:30 slot)".format(hr1, mins1, dur_hrs1))
+        if (hr2, mins2) < (13, 30):
+            raise ServiceValidationError("Heatmiser: DHW evening on time ({:02d}:{:02d}) must be 13:30 or later (after the fixed 13:00-13:30 slot)".format(hr2, mins2))
+        if hr2+dur_hrs2 >= 24:
+            raise ServiceValidationError("Heatmiser: DHW evening period ({:02d}:{:02d} for {}h) must end before 24:00".format(hr2, mins2, dur_hrs2))
         sched = [4,0, 4,30, hr1,mins1, hr1+dur_hrs1,mins1, 13,0, 13,30, hr2,mins2, hr2+dur_hrs2,mins2]
         if day == 'sat':
             weekend = True
@@ -306,4 +319,4 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         _LOGGER.info("[RS] Setting DHW schedule with Weekend={}, {}".format(weekend, sched))
         result = await self._thermo.async_set_dhw_schedule(weekend, sched)
         self._check_write(result, "set DHW schedule")
-        return result   
+        return result
