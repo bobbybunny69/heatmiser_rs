@@ -246,7 +246,7 @@ class Thermostat():
         self.dcb = None
         self.online = False     # True if the last read worked
         self.fail_count = 0     # Consecutive failed reads
-        self.model = PRT
+        self.model = model
         self.fw_version = 'v6.x.y.x'
 
     def set_read_failed(self):
@@ -282,7 +282,7 @@ class Thermostat():
         """
         _LOGGER.info("[RS] HeatmiserThermostat set_target_temp called")
 
-        if MAX_TEMP < temperature < MIN_TEMP:
+        if not MIN_TEMP <= temperature <= MAX_TEMP:
             _LOGGER.error("[RS] Refusing to set temp outside of allowed range (5-35)")
             return False
         else:
@@ -300,11 +300,12 @@ class Thermostat():
         """
         _LOGGER.info("[RS] HeatmiserThermostat set_away_temp called")
 
-        if 17 < temperature < 7:
+        if not 7 <= temperature <= 17:
             _LOGGER.error("[RS] Refusing to set temp outside of allowed range (7-17)")
+            return False
         else:
             datal = [temperature]
-            self.uh1.async_write_bytes(self, AWAYTEMP_ADDR, datal)
+            return await self.uh1.async_write_bytes(self, AWAYTEMP_ADDR, datal)
  
     def get_heat_status(self) -> bool:
         if self.dcb is None:
@@ -363,7 +364,7 @@ class Thermostat():
         _LOGGER.info("[RS] HeatmiserThermostat set_run_mode called with {}".format(heat_away))
 
         datal = [heat_away]
-        await self.uh1.async_write_bytes(self._id, RUNMODE_ADDR, datal)
+        return await self.uh1.async_write_bytes(self, RUNMODE_ADDR, datal)
         
     def get_room_temp(self):
         if self.dcb is None:

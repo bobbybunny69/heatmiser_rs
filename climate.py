@@ -5,6 +5,7 @@ from homeassistant.components.climate import ClimateEntity
 from homeassistant.components.climate.const import (
     ClimateEntityFeature,
     HVACMode,
+    HVACAction,
     FAN_ON,
     FAN_OFF,
     PRESET_HOME,
@@ -19,7 +20,7 @@ from homeassistant.helpers import entity_platform, service
 from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE, ATTR_ENTITY_ID
 from homeassistant.exceptions import HomeAssistantError
 
-from .heatmiserRS import Thermostat, MIN_TEMP, MAX_TEMP, HOLIDAY_HOURS_MAX, HW_F_ON, HW_F_OFF
+from .heatmiserRS import Thermostat, MIN_TEMP, MAX_TEMP, HOLIDAY_HOURS_MAX, HW_F_ON, HW_F_OFF, HEAT_MODE, AWAY
 from .const import DOMAIN, SET_DHW_SCHEDULE_SCHEMA, SET_HEAT_SCHEDULE_SCHEMA, SET_DAYTIME_SCHEMA
 from . coordinator import HMCoordinator
 import logging
@@ -101,17 +102,29 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         self._attr_fan_modes = [FAN_OFF, FAN_ON]
         self._attr_preset_modes = [PRESET_HOME, PRESET_AWAY]
 
-        self._attr_hvac_mode = HVACMode.HEAT if self._thermo.get_heat_status() else HVACMode.OFF
+        self._attr_hvac_mode = self._get_hvac_mode()
+        self._attr_hvac_action = self._get_hvac_action()
         self._attr_preset_mode = PRESET_AWAY if self._thermo.get_holiday() else PRESET_HOME
         self._attr_fan_mode = FAN_ON if self._thermo.get_hotwater_status() else FAN_OFF
         self._attr_native_current_temperature = self._thermo.get_room_temp()
         self._attr_native_target_temperature = self._thermo.get_target_temp()
 
+    def _get_hvac_mode(self):
+        """HEAT for normal run mode, OFF for frost protect run mode"""
+        return HVACMode.HEAT if self._thermo.get_run_mode() == HEAT_MODE else HVACMode.OFF
+
+    def _get_hvac_action(self):
+        """HEATING if the thermo is calling for heat (can happen in frost protect), else IDLE or OFF"""
+        if self._thermo.get_heat_status():
+            return HVACAction.HEATING
+        return HVACAction.IDLE if self._get_hvac_mode() == HVACMode.HEAT else HVACAction.OFF
+
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         _LOGGER.debug("[RS] _handle_coordinator_update updating _attr_ feilds for thermo {}".format(self._id))
-        self._attr_hvac_mode = HVACMode.HEAT if self._thermo.get_heat_status() else HVACMode.OFF
+        self._attr_hvac_mode = self._get_hvac_mode()
+        self._attr_hvac_action = self._get_hvac_action()
         self._attr_preset_mode = PRESET_AWAY if self._thermo.get_holiday() else PRESET_HOME
         self._attr_fan_mode = FAN_ON if self._thermo.get_hotwater_status() else FAN_OFF
         self._attr_native_current_temperature = self._thermo.get_room_temp()
@@ -123,6 +136,12 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         """Return hvac operation ie. heat, off mode."""
         _LOGGER.debug("[RS] hvac_mode for tstat-{} returns {}".format(self._id,self._attr_hvac_mode))
         return self._attr_hvac_mode
+
+    @property
+    def hvac_action(self):
+        """Return current action ie. heating (calling for heat), idle or off."""
+        _LOGGER.debug("[RS] hvac_action for tstat-{} returns {}".format(self._id,self._attr_hvac_action))
+        return self._attr_hvac_action
 
     @property
     def preset_mode(self) -> str:
@@ -155,7 +174,7 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         result =  await self._thermo.async_set_target_temp(int(temperature))
         self._check_write(result, "set target temperature")
         self._attr_native_target_temperature = temperature
-        self._attr_hvac_mode = HVACMode.HEAT if self._thermo.get_heat_status() else HVACMode.OFF
+        self._attr_hvac_action = self._get_hvac_action()
         self.async_write_ha_state()
         return result
 
@@ -172,9 +191,16 @@ class HMThermostat(CoordinatorEntity, ClimateEntity):
         self.async_write_ha_state()
         return result
 
-    async def async_set_hvac_mode(self, **kwargs):
-        """Dummy stub as not sure this can be made to do anything sensible but needed to show heat state?"""
-        _LOGGER.info("[RS] set_hvac_mode called with {} but ignoring".format(kwargs))
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode):
+        """Set HEAT (normal run mode) or OFF (frost protect run mode)"""
+        _LOGGER.info("[RS] set_hvac_mode called with {}".format(hvac_mode))
+        run_mode = HEAT_MODE if hvac_mode == HVACMode.HEAT else AWAY
+        result = await self._thermo.async_set_run_mode(run_mode)
+        self._check_write(result, "set HVAC mode")
+        self._attr_hvac_mode = hvac_mode
+        self._attr_hvac_action = self._get_hvac_action()
+        self.async_write_ha_state()
+        return result
 
     async def async_set_fan_mode(self, mode: str):
         """Set new preset mode."""
